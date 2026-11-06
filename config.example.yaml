@@ -1,0 +1,69 @@
+# Copie para config.yaml (que fica fora do git) e ajuste.
+# Nenhum endereço de máquina fica no código: tudo vem daqui ou de variáveis
+# de ambiente (OLLAMA_HOST tem prioridade sobre ollama.url).
+
+assistente:
+  id: engenheiro          # identificador técnico (tópicos MQTT, nomes de arquivo)
+  nome: Engenheiro        # nome exibido; troque quando decidir o definitivo
+
+caminhos:                 # relativos à pasta deste arquivo
+  biblioteca: data/biblioteca   # uma subpasta por coleção, com os PDFs
+  indice: data/indice.sqlite
+  cache: data/cache             # extrações do Docling (a parte lenta) ficam aqui
+  figuras: data/figuras
+  rastros: data/rastros
+
+ollama:
+  url: http://localhost:11434
+  timeout_s: 900          # CPU é lenta; melhor esperar do que abortar
+  modelos:
+    embeddings: bge-m3
+    rapido: qwen3:4b      # usados a partir da fase 2
+    forte: qwen3:14b
+    visao: qwen2.5vl:7b
+
+colecoes:
+  - veiculo
+  - carburacao_etanol
+  - ignicao
+  - eletrica_automotiva
+  - eletronica
+  - mecanica_motor
+  - sensores
+  - esp32
+  - aquisicao_dados
+  - caderno_de_bordo
+
+# Sempre consultadas, independentemente do roteamento.
+colecoes_sempre: [veiculo, caderno_de_bordo]
+
+ingestao:
+  ocr:
+    ativo: true
+    idiomas: [por, eng]           # códigos do Tesseract
+    # Página com menos caracteres que isso na camada de texto é tratada como
+    # escaneada: os trechos dela recebem origem "ocr" (menos confiáveis).
+    limiar_caracteres_pagina: 30
+  figuras:
+    salvar_imagens: true
+    # Lento em CPU (30-90 s por figura). Ao ligar/desligar, os PDFs são
+    # reextraídos (a descrição faz parte do cache de extração).
+    descrever_com_visao: false
+  corte:
+    # Medido em caracteres, não em tokens, para não depender do tokenizer.
+    # ~2400 caracteres ≈ 600-700 tokens, bem abaixo do limite do reranker.
+    max_caracteres: 2400
+    sobreposicao_caracteres: 300
+  embeddings_lote: 16
+
+busca:
+  candidatos_por_lista: 30   # quantos cada busca (BM25 / vetor, por variante) devolve
+  candidatos_rerank: 25      # quantos vão para o reranker após a fusão
+  final: 6                   # quantos ficam no fim
+  rrf_k: 60                  # constante do Reciprocal Rank Fusion (60 é o valor do artigo original)
+  roteamento: palavras_chave # "palavras_chave" ou "todas"
+  reranker:
+    ativo: true
+    modelo: BAAI/bge-reranker-v2-m3
+    max_tokens: 1024
+    dispositivo: cpu

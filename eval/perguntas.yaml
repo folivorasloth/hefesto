@@ -1,0 +1,45 @@
+# Perguntas de avaliação. Preencha com perguntas REAIS depois de indexar seus
+# livros. As entradas abaixo são só modelos genéricos (estão com `ativa: false`
+# para não contaminar o relatório até você trocá-las).
+#
+# Campos:
+#   id:                 identificador estável (o relatório compara por id entre execuções)
+#   pergunta:           como você perguntaria de verdade
+#   fontes_esperadas:   onde a resposta está. A recuperação "acerta" se pelo
+#                       menos um dos trechos finais casar com uma das fontes:
+#       arquivo:        caminho relativo a data/biblioteca (obrigatório)
+#       paginas_pdf:    [opcional] páginas do PDF (não as impressas) que contêm a resposta
+#       secao_contem:   [opcional] pedaço do título da seção
+#   fatos_chave:        frases/valores que a resposta precisa conter (usado a partir da fase 2)
+#   deve_dizer_nao_sei: true se a informação NÃO está na base (testa a honestidade)
+#   critica:            true para tensão/corrente/torque/segurança (peso no relatório)
+
+perguntas:
+  - id: modelo-torque-cabecote
+    ativa: false
+    pergunta: "Qual o torque de aperto dos parafusos do cabeçote do AP 1.6?"
+    fontes_esperadas:
+      - arquivo: veiculo/manual_de_reparacao_gol.pdf
+        paginas_pdf: [120, 121]
+        secao_contem: "Cabeçote"
+    fatos_chave: ["<valor da etapa 1>", "<valor da etapa 2>", "aperto angular"]
+    deve_dizer_nao_sei: false
+    critica: true
+
+  - id: modelo-pinos-entrada-esp32
+    ativa: false
+    pergunta: "Quais pinos do ESP32 são só de entrada?"
+    fontes_esperadas:
+      - arquivo: esp32/esp32_datasheet_en.pdf
+        secao_contem: "Pin"
+    fatos_chave: ["GPIO34", "GPIO35", "GPIO36", "GPIO39"]
+    deve_dizer_nao_sei: false
+    critica: false
+
+  - id: modelo-fora-da-base
+    ativa: false
+    pergunta: "Qual o torque da roda de um trator John Deere 5078E?"
+    fontes_esperadas: []
+    fatos_chave: []
+    deve_dizer_nao_sei: true
+    critica: true
