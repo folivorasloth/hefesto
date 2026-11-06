@@ -1,0 +1,57 @@
+# Avisos de segurança injetados pelo CÓDIGO (não dependem do LLM lembrar).
+#
+# Um tema dispara quando algum gatilho aparece na pergunta ou na resposta
+# (sem acento, sem maiúsculas, palavra inteira ou início de palavra).
+# Estes avisos são orientações gerais do sistema, não citações de livro:
+# a resposta os mostra numa seção própria, separada das fontes.
+# Mantenha-os sem números: valor técnico só com fonte.
+# E nunca escreva um aviso que contradiga um procedimento comum (ex.: "motor frio"
+# quando a regulagem exige motor quente): seja específico sobre QUANDO vale.
+
+temas:
+  bateria:
+    gatilhos: [bateria, terminal da bateria, polo negativo, polo positivo, cabo de bateria, chupeta, carregador de bateria]
+    avisos:
+      - "Ao mexer na parte elétrica, desconecte primeiro o cabo NEGATIVO da bateria; ao religar, conecte o negativo por último."
+      - "Nunca encoste uma ferramenta metálica nos dois polos da bateria ao mesmo tempo (ou no positivo e na carroceria): o curto gera faísca, calor e pode explodir a bateria."
+      - "A bateria pode liberar gás hidrogênio, que é explosivo: nada de chama ou faísca perto dela, principalmente durante a carga. Use óculos de proteção."
+
+  combustivel:
+    gatilhos: [combustivel, etanol, alcool, gasolina, carburador, cuba, boia, bomba de combustivel, mangueira de combustivel, tanque, gicle, filtro de combustivel, vazamento]
+    avisos:
+      - "Trabalhe em local ventilado, longe de chamas, cigarro e faíscas (inclusive de ferramentas elétricas e da própria bateria)."
+      - "Para abrir mangueiras, o carburador ou qualquer ponto do sistema de combustível, espere o motor esfriar: combustível pingando em peça quente (escapamento, coletor) pode pegar fogo."
+      - "Com o motor funcionando (ex.: regulagens), cuidado com o escapamento e o coletor quentes e mantenha mãos, roupas e cabos longe da correia e do ventilador."
+      - "A chama do etanol pode ser quase invisível à luz do dia. Se suspeitar de fogo, não confie só na visão. Tenha um extintor adequado por perto."
+      - "Limpe na hora qualquer combustível derramado e não deixe panos encharcados perto do motor."
+
+  partida_a_frio:
+    gatilhos: [partida a frio, tanquinho, reservatorio de partida, injetor de partida, valvula de partida a frio]
+    avisos:
+      - "O sistema de partida a frio usa gasolina num reservatório separado e esguicha combustível no coletor: os riscos de incêndio do combustível valem aqui também."
+      - "Ao testar o acionamento da partida a frio, não deixe a gasolina pulverizar fora do coletor nem perto de fios e terminais energizados."
+
+  ignicao:
+    gatilhos: [ignicao, bobina, vela, velas, cabo de vela, distribuidor, modulo de ignicao, faisca, centelha, alta tensao, sensor hall]
+    avisos:
+      - "O secundário da ignição (bobina, cabos de vela, tampa do distribuidor) trabalha com alta tensão: não toque nesses componentes com a ignição ligada ou o motor girando. Quem usa marca-passo deve manter distância."
+      - "Faísca de teste perto de combustível é risco de incêndio: teste longe do carburador e de vazamentos."
+      - "Ligar instrumentos (multímetro, osciloscópio, ESP32) direto no secundário da ignição destrói o instrumento. Meça só no primário, e com o circuito de proteção adequado."
+
+  eletronica_12v:
+    gatilhos: [esp32, arduino, microcontrolador, placa, circuito, regulador, conversor, buck, divisor de tensao, optoacoplador, chicote, derivacao, adaptador em t, telemetria]
+    avisos:
+      - "Os 12 V do carro não são uma fonte limpa: há transientes de partida, ruído da ignição e o load dump (pico quando a bateria desconecta com o alternador carregando). Proteja a entrada com supressor de transientes e filtro."
+      - "Proteja contra inversão de polaridade (diodo ou MOSFET na entrada) e coloque um fusível próprio para o seu circuito, perto do ponto de derivação."
+      - "Use um terra comum bem feito entre o circuito e o carro; terra ruim causa leituras erradas e pode danificar entradas."
+      - "Nenhuma derivação deve ser permanente: use adaptadores em T, conectores de derivação e chicote removível."
+
+  arrefecimento:
+    gatilhos: [radiador, arrefecimento, liquido de arrefecimento, reservatorio de expansao, tampa do radiador, valvula termostatica]
+    avisos:
+      - "Não abra a tampa do radiador nem do reservatório com o motor quente: o sistema fica pressurizado e o líquido pode jorrar fervendo."
+
+  elevacao:
+    gatilhos: [macaco, cavalete, levantar o carro, embaixo do carro, debaixo do carro, suspender o carro]
+    avisos:
+      - "Nunca fique embaixo do carro apoiado só no macaco. Use cavaletes em pontos firmes da carroceria, em piso plano, com as rodas calçadas."

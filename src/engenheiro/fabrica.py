@@ -54,3 +54,19 @@ def recuperador(cfg: Config, bco: Banco, emb, bus: Barramento, com_reranker: boo
         rr = RerankerCrossEncoder(r.modelo, r.max_tokens, r.dispositivo)
     glossario = Glossario.carregar(cfg.dados_ref / "glossario.yaml")
     return Recuperador(cfg, bco, glossario, emb, rr, bus)
+
+
+def engenheiro(cfg: Config, bco: Banco, bus: Barramento, embedder_falso: bool = False, com_reranker: bool | None = None):
+    """Monta o assistente completo. Se o Ollama não responder agora, o LLM fica
+    None e o assistente opera no modo "sem modelo" (não improvisa respostas)."""
+    from engenheiro.assistente import Engenheiro
+    from engenheiro.persona import Persona
+    from engenheiro.seguranca import Seguranca
+
+    cli = cliente_ollama(cfg)
+    llm = cli if cli.disponivel() else None
+    emb = embedder(cfg, embedder_falso) if (llm is not None or embedder_falso) else None
+    rec = recuperador(cfg, bco, emb, bus, com_reranker)
+    persona = Persona.carregar(cfg.caminho(cfg.assistente.persona))
+    seg = Seguranca.carregar(cfg.dados_ref / "seguranca.yaml")
+    return Engenheiro(cfg, rec, llm, persona, seg, bus)

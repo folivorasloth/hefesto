@@ -4,7 +4,7 @@
 
 assistente:
   id: engenheiro          # identificador técnico (tópicos MQTT, nomes de arquivo)
-  nome: Engenheiro        # nome exibido; troque quando decidir o definitivo
+  persona: persona/engenheiro.yaml   # nome, tom e exemplos (edite lá)
 
 caminhos:                 # relativos à pasta deste arquivo
   biblioteca: data/biblioteca   # uma subpasta por coleção, com os PDFs
@@ -62,8 +62,25 @@ busca:
   final: 6                   # quantos ficam no fim
   rrf_k: 60                  # constante do Reciprocal Rank Fusion (60 é o valor do artigo original)
   roteamento: palavras_chave # "palavras_chave" ou "todas"
+  # Trechos com score do reranker abaixo disso não vão para o LLM; se nenhum
+  # passar, a resposta é "não encontrei". PROVISÓRIO: calibre com o
+  # `engenheiro avaliar` depois de indexar seus livros.
+  limiar_relevancia: 0.10
+  rerank_com_traducao: true   # pontua também pela tradução EN da pergunta
   reranker:
     ativo: true
     modelo: BAAI/bge-reranker-v2-m3
     max_tokens: 1024
     dispositivo: cpu
+
+geracao:
+  # O padrão do Ollama é pequeno e corta o começo do prompt SEM aviso quando
+  # ele passa do limite. 12k cabe ~8 trechos + instruções. Mais contexto = mais RAM.
+  num_ctx: 12288
+  temperatura: 0.0
+  # Omitido = padrão do modelo. Para qwen3, false deixa bem mais rápido.
+  # pensar: false
+  max_trechos_contexto: 8
+
+verificador:
+  ativo: true   # desligar só para depurar; a resposta avisa que não foi verificada

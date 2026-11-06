@@ -8,17 +8,17 @@ numa fonte (`[Livro, p. X]`), faz as contas com ferramentas (nunca "de cabeça")
 e diz "não encontrei" quando a base não tem a resposta. Toda resposta gera um
 rastro JSON auditável.
 
-O identificador técnico é `engenheiro`; o nome exibido fica em `config.yaml`
-(`assistente.nome`).
+O identificador técnico é `engenheiro`. Nome, tom e exemplos ficam em
+`persona/engenheiro.yaml`.
 
 ## Estado das fases
 
 | Fase | Conteúdo | Estado |
 |---|---|---|
 | 1 | Ingestão (Docling + OCR), corte por seção, índice híbrido (BM25 + vetores), reranker, CLI de busca, avaliação de recuperação | **pronta** |
-| 2 | Respostas com citações + verificador | — |
+| 2 | Respostas com citações + verificador, segurança determinística, persona, rastro completo | **pronta** (validar com o seu Ollama) |
 | 3 | Ferramentas de cálculo, tabela de pinos do ESP32, perfil do veículo, caderno de bordo | — |
-| 4 | Avaliação completa (fatos-chave, citações, "não sei") | parcial (recuperação já mede) |
+| 4 | Avaliação completa (fatos-chave, citações, "não sei") | parcial (modos `recuperacao` e `resposta` já existem) |
 | 5 | Voz e mumbling | — |
 | 6 | API HTTP e MQTT | — |
 
@@ -51,6 +51,103 @@ As decisões e os porquês estão comentados no código. Os pontos principais:
   visão são marcados como tal e aparecem com aviso.
 - **Degradação explícita.** Sem Ollama, a busca segue só por palavra-chave e
   avisa. Sem reranker, vale a ordem RRF e avisa. Nunca há falha silenciosa.
+
+## Perguntando (fase 2)
+
+```bash
+engenheiro perguntar "como regular a marcha lenta?"
+```
+
+```bash
+engenheiro rastro 20261106T214532Z-9b06d1
+```
+
+O primeiro comando mostra cada etapa enquanto acontece e, no fim, a resposta
+e o id do rastro. O segundo mostra o rastro: candidatos com scores, o que
+passou no limiar, o veredito de cada afirmação e a resposta final. Use
+`--json` para ver tudo, inclusive os prompts exatos e as saídas brutas dos
+modelos.
+
+### Como a resposta é montada
+
+1. **Modelo:** conversa (cumprimento, agradecimento) vai para o modelo rápido,
+   sem busca e proibido de dar dado técnico. Todo o resto vai para o **forte**.
+   A regra é por palavras, auditável no rastro: na dúvida, forte.
+2. **Tradução:** o modelo rápido traduz a pergunta para o inglês técnico. A
+   tradução vira mais uma busca, e o reranker pontua cada trecho pela pergunta
+   original e pela tradução, ficando com o maior score.
+3. **Limiar:** trechos abaixo de `busca.limiar_relevancia` não vão para o
+   modelo. Se nenhum passar, ele diz que não encontrou e sugere onde procurar
+   ou o que medir.
+4. **Geração estruturada:** o modelo forte devolve JSON (o Ollama força o
+   esquema), com cada afirmação separada, marcada como `fonte` ou
+   `inferencia` e ligada aos ids dos trechos (`T1`, `T2`...).
+5. **Verificador:** o código descarta citações a trechos inexistentes. Um
+   segundo prompt no modelo forte confere cada afirmação contra os trechos
+   citados. O código marca números que não aparecem na fonte citada nem na
+   sua pergunta. As regras de decisão estão em
+   `src/engenheiro/verificador/verificador.py`:
+
+   | Situação | Resultado |
+   |---|---|
+   | Afirmação reprovada | Removida e listada à parte, com o motivo |
+   | Suporte parcial | Vira inferência |
+   | Número sem origem | Vira inferência, com ⚠ |
+   | Verificador fora do ar | Nada conta como aprovado |
+   | Problema em afirmação crítica (tensão, corrente, torque, combustível, bateria, ignição, segurança) | Aparece no **topo** da resposta |
+
+6. **Segurança:** os avisos vêm de `dados_ref/seguranca.yaml`, disparados por
+   palavras da pergunta, da resposta e dos trechos usados. Não dependem do
+   modelo lembrar.
+7. **Montagem:** o código troca `T1` por `[Livro, p. X]` a partir dos
+   metadados do trecho. O modelo nunca escreve a citação, então não consegue
+   inventar uma.
+
+A resposta tem seções separadas: **Das fontes**, **Inferência**, **Não
+encontrei nas fontes**, **Sugestões**, **Segurança** e **Removidas pelo
+verificador**.
+
+Sem o Ollama, ele não responde de memória: diz que está sem o modelo e lista
+onde estão os trechos relevantes.
+
+### Calibrando o limiar de relevância
+
+O `limiar_relevancia: 0.10` é provisório. Depois de indexar seus livros e
+preencher `eval/perguntas.yaml` (inclua perguntas cuja resposta NÃO está na
+base), rode:
+
+```bash
+engenheiro avaliar
+```
+
+Compare `score_rerank_min_dos_acertos` com `score_rerank_max_fora_da_base` e
+ponha o limiar entre os dois, mais perto do segundo. Errar para baixo só
+manda um trecho a mais para o modelo (e o verificador ainda confere). Errar
+para cima faz ele dizer "não encontrei" quando a resposta estava lá.
+
+### Validando a fase 2 com o modelo real
+
+```bash
+engenheiro avaliar --modo resposta --perguntas eval/perguntas_corpus_teste.yaml --indice data/teste.sqlite
+```
+
+O relatório mede:
+
+- `nao_sei_correto`: disse "não encontrei" quando a informação não estava na base?
+- `falso_nao_sei`: disse "não encontrei" quando a informação estava lá?
+- `fonte_aprovada`: das afirmações exibidas como fonte, quantas o verificador
+  aprovou. Deve ser 1.0.
+- `fatos_chave`: os fatos esperados aparecem na resposta?
+- `respostas_com_problema_critico`;
+- o tempo médio por resposta.
+
+Cada linha do relatório tem o id do rastro para você auditar.
+
+**Tempo:** cada pergunta técnica faz três chamadas ao modelo (tradução no
+rápido, geração e verificação no forte). Num i7 sem GPU com um modelo de 14B,
+conte alguns minutos por resposta. Para o `qwen3`, `geracao.pensar: false` no
+config deixa bem mais rápido; `true` pode raciocinar melhor. Compare os dois
+pela avaliação.
 
 ## Máquinas
 
@@ -237,7 +334,10 @@ pytest
 ```
 
 Esse comando roda os testes rápidos: chunker, busca, citações, indexação
-incremental, CLI e avaliação. Os lentos ficam separados:
+incremental, CLI, avaliação e, na fase 2, o assistente inteiro com um LLM
+roteirizado. Esse LLM de teste se comporta mal de propósito (cita trecho que
+não existe, inventa número, derruba o verificador) para provar que o sistema
+pega cada caso. Os lentos ficam separados:
 
 ```bash
 pytest -m docling

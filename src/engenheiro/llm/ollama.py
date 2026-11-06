@@ -24,6 +24,25 @@ class Embedder(Protocol):
     def embed(self, textos: list[str]) -> list[list[float]]: ...
 
 
+class RespostaLLM(dict):
+    """Resposta do chat: {"conteudo": str, "modelo": str, "metricas": {...}}."""
+
+
+class LLM(Protocol):
+    def chat(
+        self,
+        modelo: str,
+        mensagens: list[dict],
+        formato: dict | None = None,
+        opcoes: dict | None = None,
+        pensar: bool | None = None,
+    ) -> RespostaLLM: ...
+
+
+class RespostaInvalida(RuntimeError):
+    """O modelo devolveu algo que não é o JSON pedido."""
+
+
 def normalizar(v: list[float]) -> list[float]:
     n = math.sqrt(sum(x * x for x in v)) or 1.0
     return [x / n for x in v]
@@ -58,6 +77,30 @@ class ClienteOllama:
     def embed(self, modelo: str, textos: list[str]) -> list[list[float]]:
         dados = self._post("/api/embed", {"model": modelo, "input": textos})
         return dados["embeddings"]
+
+    def chat(
+        self,
+        modelo: str,
+        mensagens: list[dict],
+        formato: dict | None = None,
+        opcoes: dict | None = None,
+        pensar: bool | None = None,
+    ) -> RespostaLLM:
+        """Chama /api/chat sem streaming.
+
+        `formato` é um JSON Schema: o Ollama restringe a geração para que a
+        saída siga o esquema (structured outputs). Isso elimina a classe de
+        erro "o modelo esqueceu de citar o trecho" no nível da sintaxe; o
+        conteúdo continua sendo checado pelo verificador.
+        """
+        corpo: dict = {"model": modelo, "messages": mensagens, "stream": False, "options": opcoes or {}}
+        if formato is not None:
+            corpo["format"] = formato
+        if pensar is not None:
+            corpo["think"] = pensar
+        d = self._post("/api/chat", corpo)
+        metricas = {k: d.get(k) for k in ("total_duration", "prompt_eval_count", "eval_count", "done_reason")}
+        return RespostaLLM(conteudo=d["message"]["content"], modelo=modelo, metricas=metricas)
 
     def descrever_imagem(self, modelo: str, imagem, prompt: str) -> str:
         buf = io.BytesIO()

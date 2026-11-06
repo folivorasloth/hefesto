@@ -120,6 +120,79 @@ def avaliar_recuperacao(rec: Recuperador, perguntas: list[Pergunta], k: int) -> 
     return {"metricas": metricas, "itens": itens}
 
 
+def _normalizar_fato(t: str) -> str:
+    from engenheiro.recuperacao.reescrita import normalizar
+
+    # "17,3 N·m" e "17.3 N.m" contam como o mesmo fato.
+    t = normalizar(t).replace("·", ".").replace(",", ".")
+    return " ".join(t.split())
+
+
+def avaliar_respostas(eng, perguntas: list[Pergunta], pasta_rastros: Path) -> dict:
+    """Fase 2: roda o assistente completo e mede honestidade e rastreabilidade.
+
+    - nao_sei_correto: nas perguntas fora da base, ele disse que não encontrou?
+    - falso_nao_sei: nas respondíveis, ele disse que não encontrou (mas estava lá)?
+    - fonte_aprovada: das afirmações exibidas como "fonte", quantas o
+      verificador aprovou ("suporta"). Por construção deve ser 1.0; se não
+      for, há defeito no código.
+    - inferencias_criticas_sem_base: afirmações críticas que ficaram como
+      inferência sem nenhum trecho de partida (devem ser raras).
+    - fatos_chave: fração dos fatos esperados que aparecem no texto final
+      (comparação simples de texto; a fase 4 refina).
+    """
+    from engenheiro import rastro as mod_rastro
+
+    itens = []
+    for p in perguntas:
+        t0 = time.time()
+        resp = eng.responder(p.pergunta)
+        r = mod_rastro.carregar(pasta_rastros, resp.rastro_id)
+        afs = (r.get("verificacao") or {}).get("afirmacoes", [])
+        exibidas_fonte = [a for a in afs if a["tipo"] == "fonte" and a["status"] != "removida"]
+        texto_n = _normalizar_fato(resp.texto)
+        fatos = [f for f in p.fatos_chave if _normalizar_fato(f) in texto_n]
+        itens.append({
+            "id": p.id,
+            "pergunta": p.pergunta,
+            "deve_dizer_nao_sei": p.deve_dizer_nao_sei,
+            "critica": p.critica,
+            "encontrou": resp.encontrou,
+            "sem_llm": bool(r.get("sem_llm")),
+            "fontes_exibidas": len(exibidas_fonte),
+            "fontes_aprovadas": sum(a["veredito"] == "suporta" for a in exibidas_fonte),
+            "removidas": sum(a["status"] == "removida" for a in afs),
+            "rebaixadas": sum(a["status"] == "rebaixada" for a in afs),
+            "inferencias_criticas_sem_base": sum(
+                a["tipo"] == "inferencia" and a["critica"] and not a["trechos"] and a["status"] != "removida" for a in afs
+            ),
+            "problemas_criticos": resp.problemas_criticos,
+            "fatos_encontrados": fatos,
+            "fatos_esperados": p.fatos_chave,
+            "rastro": resp.rastro_id,
+            "segundos": round(time.time() - t0, 1),
+        })
+
+    resp_ = [i for i in itens if not i["deve_dizer_nao_sei"]]
+    fora = [i for i in itens if i["deve_dizer_nao_sei"]]
+    total_fontes = sum(i["fontes_exibidas"] for i in itens)
+    total_fatos = sum(len(i["fatos_esperados"]) for i in resp_)
+    metricas = {
+        "perguntas": len(itens),
+        "sem_llm": sum(i["sem_llm"] for i in itens),
+        "nao_sei_correto": _fracao([not i["encontrou"] for i in fora]),
+        "falso_nao_sei": _fracao([not i["encontrou"] for i in resp_]),
+        "fonte_aprovada": round(sum(i["fontes_aprovadas"] for i in itens) / total_fontes, 4) if total_fontes else None,
+        "afirmacoes_removidas": sum(i["removidas"] for i in itens),
+        "afirmacoes_rebaixadas": sum(i["rebaixadas"] for i in itens),
+        "inferencias_criticas_sem_base": sum(i["inferencias_criticas_sem_base"] for i in itens),
+        "respostas_com_problema_critico": sum(bool(i["problemas_criticos"]) for i in itens),
+        "fatos_chave": round(sum(len(i["fatos_encontrados"]) for i in resp_) / total_fatos, 4) if total_fatos else None,
+        "segundos_medio": round(sum(i["segundos"] for i in itens) / len(itens), 1) if itens else None,
+    }
+    return {"metricas": metricas, "itens": itens}
+
+
 def _fracao(v: list[bool]) -> float | None:
     return round(sum(v) / len(v), 4) if v else None
 
@@ -156,9 +229,15 @@ def comparar(atual: dict, anterior: dict | None) -> dict:
         a = anterior["metricas"].get(k)
         if isinstance(v, (int, float)) and isinstance(a, (int, float)):
             delta[k] = round(v - a, 4)
-    antes = {i["id"]: i["acertou"] for i in anterior["itens"]}
-    melhoraram = [i["id"] for i in atual["itens"] if i["acertou"] and antes.get(i["id"]) is False]
-    pioraram = [i["id"] for i in atual["itens"] if not i["acertou"] and antes.get(i["id"]) is True]
+    def ok(i: dict) -> bool:
+        if "acertou" in i:
+            return i["acertou"]
+        # modo resposta: certo = disse "não sei" quando devia, ou respondeu quando devia
+        return (not i["encontrou"]) if i["deve_dizer_nao_sei"] else i["encontrou"]
+
+    antes = {i["id"]: ok(i) for i in anterior["itens"]}
+    melhoraram = [i["id"] for i in atual["itens"] if ok(i) and antes.get(i["id"]) is False]
+    pioraram = [i["id"] for i in atual["itens"] if not ok(i) and antes.get(i["id"]) is True]
     return {"execucao_anterior": anterior["execucao"], "delta": delta, "melhoraram": melhoraram, "pioraram": pioraram}
 
 
@@ -188,6 +267,17 @@ def _markdown(r: dict) -> str:
         linhas += ["", f"Comparado com {comp['execucao_anterior']}.",
                    f"- Melhoraram: {', '.join(comp['melhoraram']) or 'nenhuma'}",
                    f"- **Pioraram: {', '.join(comp['pioraram']) or 'nenhuma'}**"]
+    if r["modo"] == "resposta":
+        linhas += ["", "## Por pergunta", "", "| id | esperado | encontrou | fontes ok | removidas | fatos | críticos | rastro |",
+                   "|---|---|---|---|---|---|---|---|"]
+        for i in r["itens"]:
+            esperado = "não sei" if i["deve_dizer_nao_sei"] else "resposta"
+            linhas.append(
+                f"| {i['id']} | {esperado} | {'sim' if i['encontrou'] else 'não'} | "
+                f"{i['fontes_aprovadas']}/{i['fontes_exibidas']} | {i['removidas']} | "
+                f"{len(i['fatos_encontrados'])}/{len(i['fatos_esperados'])} | {len(i['problemas_criticos'])} | `{i['rastro']}` |"
+            )
+        return "\n".join(linhas) + "\n"
     linhas += ["", "## Por pergunta", "", "| id | acertou | posição | rerank | 1º trecho |", "|---|---|---|---|---|"]
     for i in r["itens"]:
         primeiro = i["finais"][0] if i["finais"] else None

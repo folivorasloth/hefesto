@@ -35,7 +35,8 @@ class Candidato:
     posicao_rrf: int
     # Posição e score em cada lista: {"bm25:original": {"posicao": 1, "score": 7.3}, ...}
     listas: dict[str, dict] = field(default_factory=dict)
-    rerank: float | None = None
+    rerank: float | None = None                 # o maior entre as consultas do reranker
+    rerank_por_consulta: dict[str, float] = field(default_factory=dict)
     posicao_final: int | None = None
 
 
@@ -81,12 +82,22 @@ class Recuperador:
         self.reranker = reranker
         self.bus = barramento or Barramento()
 
-    def buscar(self, pergunta: str, final: int | None = None, colecoes: list[str] | None = None) -> ResultadoBusca:
+    def buscar(
+        self,
+        pergunta: str,
+        final: int | None = None,
+        colecoes: list[str] | None = None,
+        variantes_extra: list[Variante] | None = None,
+        consultas_rerank: dict[str, str] | None = None,
+    ) -> ResultadoBusca:
+        """`variantes_extra`: ex. a tradução da pergunta feita pelo LLM (fase 2).
+        `consultas_rerank`: {nome: texto} pontuadas pelo reranker; cada trecho
+        fica com o maior score. Padrão: só a pergunta original."""
         cb = self.cfg.busca
         final = final or cb.final
         avisos: list[str] = []
 
-        variantes = gerar_variantes(pergunta, self.glossario)
+        variantes = gerar_variantes(pergunta, self.glossario) + list(variantes_extra or [])
         self.bus.publicar("busca.variantes", variantes=[asdict(v) for v in variantes])
 
         if colecoes:
@@ -114,7 +125,7 @@ class Recuperador:
             candidatos.append(c)
         self.bus.publicar("busca.fusao", candidatos=len(candidatos), listas=list(listas))
 
-        finais = self._reordenar(pergunta, candidatos, final, avisos)
+        finais = self._reordenar(consultas_rerank or {"original": pergunta}, candidatos, final, avisos)
         self.bus.publicar(
             "busca.final",
             trechos=[{"id": c.trecho.id, "livro": c.trecho.citacao, "rerank": c.rerank} for c in finais],
@@ -144,7 +155,7 @@ class Recuperador:
             avisos.append(f"{sem_embedding} trechos ainda sem embedding: só aparecem pela palavra-chave.")
         return saida
 
-    def _reordenar(self, pergunta, candidatos, final, avisos) -> list[Candidato]:
+    def _reordenar(self, consultas: dict[str, str], candidatos, final, avisos) -> list[Candidato]:
         if not candidatos:
             return []
         if self.reranker is None:
@@ -153,15 +164,16 @@ class Recuperador:
         else:
             textos = [f"{c.trecho.secao}\n{c.trecho.texto}" for c in candidatos]
             try:
-                scores = self.reranker.pontuar(pergunta, textos)
+                por_consulta = {nome: self.reranker.pontuar(q, textos) for nome, q in consultas.items()}
             except Exception as e:  # noqa: BLE001 - reranker com defeito não pode zerar a busca
                 avisos.append(f"Reranker falhou ({e!r}); usando a ordem da fusão RRF.")
                 self.bus.publicar("busca.rerank_falhou", erro=repr(e))
                 escolhidos = candidatos[:final]
             else:
-                for c, s in zip(candidatos, scores):
-                    c.rerank = round(s, 4)
-                self.bus.publicar("busca.rerank", avaliados=len(candidatos))
+                for i, c in enumerate(candidatos):
+                    c.rerank_por_consulta = {n: round(sc[i], 4) for n, sc in por_consulta.items()}
+                    c.rerank = max(c.rerank_por_consulta.values())
+                self.bus.publicar("busca.rerank", avaliados=len(candidatos), consultas=list(consultas))
                 escolhidos = sorted(candidatos, key=lambda c: c.rerank, reverse=True)[:final]
         for i, c in enumerate(escolhidos, start=1):
             c.posicao_final = i

@@ -182,7 +182,7 @@ def status(config: Optional[Path] = OpcConfig, indice: Optional[Path] = OpcIndic
 @app.command()
 def avaliar(
     perguntas: Path = typer.Option(Path("eval/perguntas.yaml"), "--perguntas", help="Arquivo de perguntas"),
-    modo: str = typer.Option("recuperacao", help="Fase 1: só 'recuperacao'"),
+    modo: str = typer.Option("recuperacao", help="recuperacao (só busca) ou resposta (assistente completo)"),
     config: Optional[Path] = OpcConfig,
     indice: Optional[Path] = OpcIndice,
     sem_rerank: bool = typer.Option(False, "--sem-rerank"),
@@ -192,23 +192,119 @@ def avaliar(
     """Roda a avaliação e grava um relatório comparável com a execução anterior."""
     from engenheiro import avaliacao
 
-    if modo != "recuperacao":
-        con.print("[red]Na fase 1 só existe o modo 'recuperacao'.[/]")
+    if modo not in ("recuperacao", "resposta"):
+        con.print("[red]Modos: 'recuperacao' (só busca) ou 'resposta' (assistente completo, precisa do Ollama).[/]")
         raise typer.Exit(2)
     cfg = carregar_config(config)
     lista = avaliacao.carregar_perguntas(perguntas)
     if not lista:
         con.print(f"[yellow]Nenhuma pergunta ativa em {perguntas}.[/]")
         raise typer.Exit(2)
-    rec = fabrica.recuperador(cfg, fabrica.banco(cfg, indice), fabrica.embedder(cfg, embedder_falso), Barramento(),
-                              False if sem_rerank else None)
-    res = avaliacao.avaliar_recuperacao(rec, lista, cfg.busca.final)
+    if modo == "resposta":
+        eng = fabrica.engenheiro(cfg, fabrica.banco(cfg, indice), Barramento(), embedder_falso, False if sem_rerank else None)
+        if eng.llm is None:
+            con.print(f"[red]Ollama inacessível em {cfg.ollama.url}: o modo 'resposta' precisa do LLM.[/]")
+            raise typer.Exit(2)
+        rec = eng.rec
+        res = avaliacao.avaliar_respostas(eng, lista, cfg.caminho(cfg.caminhos.rastros))
+    else:
+        rec = fabrica.recuperador(cfg, fabrica.banco(cfg, indice), fabrica.embedder(cfg, embedder_falso), Barramento(),
+                                  False if sem_rerank else None)
+        res = avaliacao.avaliar_recuperacao(rec, lista, cfg.busca.final)
     extra = {"indice": str(indice or cfg.caminho(cfg.caminhos.indice)), "embedder": rec.embedder.nome if rec.embedder else None,
              "reranker": rec.reranker.nome if rec.reranker else None}
     j, m = avaliacao.gravar_relatorio(saida, perguntas, modo, res, avaliacao.resumo_config(cfg, extra))
     for k, v in res["metricas"].items():
         con.print(f"  {k:42} {v}")
     con.print(f"\nRelatório: {m}\nJSON: {j}")
+
+
+@app.command()
+def perguntar(
+    pergunta: str = typer.Argument(..., help="Sua pergunta"),
+    config: Optional[Path] = OpcConfig,
+    indice: Optional[Path] = OpcIndice,
+    sem_rerank: bool = typer.Option(False, "--sem-rerank", help="Sem reranker (desliga o filtro de relevância)"),
+    mostrar_passos: bool = typer.Option(True, "--passos/--sem-passos", help="Mostra cada etapa enquanto acontece"),
+    embedder_falso: bool = OpcFalso,
+):
+    """Pergunta ao engenheiro: resposta com citações, verificada, e rastro salvo."""
+    cfg = carregar_config(config)
+    bus = Barramento()
+    if mostrar_passos:
+        bus.assinar(_mostrar_passo)
+    eng = fabrica.engenheiro(cfg, fabrica.banco(cfg, indice), bus, embedder_falso, False if sem_rerank else None)
+    if eng.llm is None:
+        con.print(f"[yellow]Ollama inacessível em {cfg.ollama.url}: sem geração de resposta.[/]")
+    resp = eng.responder(pergunta)
+    con.print()
+    con.print(Panel(Text(resp.texto), title=f"{escape(eng.persona.nome)}", title_align="left",
+                    border_style="red" if resp.problemas_criticos else "cyan"))
+    con.print(f"[dim]Rastro: engenheiro rastro {resp.rastro_id}[/]")
+
+
+_FRASES_PASSO = {
+    "modelo.escolhido": lambda d: f"modelo {d['nivel']} ({d['motivo']})",
+    "busca.traducao": lambda d: f"tradução para busca: {d['consulta_en']}",
+    "busca.roteamento": lambda d: f"coleções: {', '.join(d['colecoes'])}",
+    "busca.bm25": lambda d: f"palavra-chave: {sum(d['acertos'].values())} acertos",
+    "busca.vetor": lambda d: f"semântica: {sum(d['acertos'].values())} acertos",
+    "busca.rerank": lambda d: f"reranker avaliou {d['avaliados']} candidatos",
+    "busca.relevantes": lambda d: f"{d['quantidade']} trechos relevantes ({d['descartados']} abaixo do limiar)",
+    "geracao.concluida": lambda d: f"resposta gerada com {d['afirmacoes']} afirmações",
+    "verificacao.concluida": lambda d: (
+        f"verificação: {d['removidas']} removidas, {d['rebaixadas']} rebaixadas, {d['criticos']} problemas críticos"
+        if d["executada"] else "verificação NÃO executada"
+    ),
+}
+
+
+def _mostrar_passo(ev) -> None:
+    f = _FRASES_PASSO.get(ev.tipo)
+    if f:
+        con.print(f"[dim]… {escape(f(ev.dados))}[/]")
+
+
+@app.command("rastro")
+def ver_rastro(
+    id_rastro: str = typer.Argument(..., help="Id mostrado ao fim da resposta"),
+    config: Optional[Path] = OpcConfig,
+    como_json: bool = typer.Option(False, "--json", help="Mostra o JSON inteiro"),
+):
+    """Mostra por que ele respondeu o que respondeu."""
+    cfg = carregar_config(config)
+    r = rastro.carregar(cfg.caminho(cfg.caminhos.rastros), id_rastro)
+    if como_json:
+        typer.echo(json.dumps(r, ensure_ascii=False, indent=2))
+        return
+    con.print(Text(f"Pergunta: {r['pergunta']}", style="bold"))
+    con.print(Text(f"Modelo: {r['escolha_modelo']}"))
+    if "traducao" in r:
+        con.print(Text(f"Tradução: {r['traducao']}"))
+    b = r.get("busca")
+    if b:
+        con.print(Text(f"Coleções: {', '.join(b['roteamento']['colecoes'])}  ·  limiar: {b['limiar_relevancia']}"))
+        t = Table(title="Candidatos")
+        for col in ("trecho", "RRF", "rerank", "por consulta", "fonte", "seção", "usado"):
+            t.add_column(col)
+        relevantes = set(b["relevantes"])
+        for c in b["candidatos"]:
+            tr = c["trecho"]
+            t.add_row(str(tr["id"]), f"{c['rrf']:.4f}", _fmt(c["rerank"]), Text(json.dumps(c.get("rerank_por_consulta", {}))),
+                      Text(f"{tr['citacao']} p.{tr['pagina_inicio']}"), Text(tr["secao"]), "sim" if tr["id"] in relevantes else "")
+        con.print(t)
+    v = r.get("verificacao")
+    if v:
+        t = Table(title=f"Verificação ({'executada' if v['executada'] else 'NÃO executada: ' + str(v['motivo_nao_executada'])})")
+        for col in ("id", "tipo original → final", "veredito", "status", "cita", "texto", "justificativa / notas"):
+            t.add_column(col)
+        for a in v["afirmacoes"]:
+            t.add_row(a["id"], f"{a['tipo_original']} → {a['tipo']}", str(a["veredito"]), a["status"], ",".join(a["trechos"]),
+                      Text(a["texto"]), Text("; ".join(filter(None, [a.get("justificativa") or "", *a["notas"]]))))
+        con.print(t)
+        for p in v["problemas_criticos"]:
+            con.print(Text(f"⚠ {p}", style="bold red"))
+    con.print(Panel(Text(r.get("resposta_final", "")), title="Resposta final", title_align="left"))
 
 
 @app.command("corpus-teste")

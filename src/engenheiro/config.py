@@ -16,7 +16,8 @@ from pydantic import BaseModel, Field
 
 class Assistente(BaseModel):
     id: str = "engenheiro"
-    nome: str = "Engenheiro"
+    # Nome, tom e exemplos ficam no arquivo de persona (editável).
+    persona: Path = Path("persona/engenheiro.yaml")
 
 
 class Caminhos(BaseModel):
@@ -77,6 +78,31 @@ class Busca(BaseModel):
     rrf_k: int = 60
     roteamento: str = "palavras_chave"
     reranker: Reranker = Field(default_factory=Reranker)
+    # Trecho com score do reranker abaixo disso não vai para o LLM. Se nenhum
+    # passar, a resposta é "não encontrei". Valor PROVISÓRIO: calibre com
+    # `engenheiro avaliar` (compare score_rerank_min_dos_acertos com
+    # score_rerank_max_fora_da_base) depois de indexar seus livros.
+    limiar_relevancia: float = Field(0.10, ge=0, le=1)
+    # Pontua cada trecho também contra a tradução da pergunta para o inglês
+    # (gerada pelo modelo rápido) e fica com o maior score. Medido no corpus de
+    # teste: pergunta em PT x trecho em EN = 0,06; a tradução = 0,998.
+    rerank_com_traducao: bool = True
+
+
+class Geracao(BaseModel):
+    # Janela de contexto pedida ao Ollama. O padrão do Ollama é pequeno e,
+    # quando o prompt passa dele, o começo é cortado SEM aviso. Aqui o código
+    # estima o tamanho do prompt e descarta trechos de menor score, avisando.
+    num_ctx: int = 12288
+    temperatura: float = 0.0
+    # None = não envia o parâmetro "think" (comportamento padrão do modelo).
+    # Para qwen3: false deixa bem mais rápido; true pode raciocinar melhor.
+    pensar: bool | None = None
+    max_trechos_contexto: int = 8
+
+
+class Verificador(BaseModel):
+    ativo: bool = True
 
 
 COLECOES_PADRAO = [
@@ -101,6 +127,8 @@ class Config(BaseModel):
     colecoes_sempre: list[str] = Field(default_factory=lambda: ["veiculo", "caderno_de_bordo"])
     ingestao: Ingestao = Field(default_factory=Ingestao)
     busca: Busca = Field(default_factory=Busca)
+    geracao: Geracao = Field(default_factory=Geracao)
+    verificador: Verificador = Field(default_factory=Verificador)
 
     # Pasta raiz do projeto (onde fica o config.yaml e dados_ref/).
     raiz: Path = Path(".")
