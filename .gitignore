@@ -1,0 +1,10 @@
+# Base de conhecimento, índice, caches, rastros: nunca no git
+data/
+config.yaml
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+eval/relatorios/*.json
+!eval/relatorios/.gitkeep
