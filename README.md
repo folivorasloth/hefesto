@@ -149,6 +149,25 @@ conte alguns minutos por resposta. Para o `qwen3`, `geracao.pensar: false` no
 config deixa bem mais rápido; `true` pode raciocinar melhor. Compare os dois
 pela avaliação.
 
+## Inventário de componentes
+
+`inventario/componentes.yaml` lista o que existe fisicamente na bancada, para
+este projeto e para o Divine Machinery. Toda especificação diz se foi
+confirmada, se é provável ou se falta confirmar, e de onde veio. Veja
+`inventario/README.md`.
+
+```bash
+engenheiro inventario
+```
+
+```bash
+engenheiro inventario --pendencias
+```
+
+O primeiro lista os componentes. O segundo mostra o que falta contar,
+fotografar ou confirmar. A partir da fase 3, o engenheiro consulta o
+inventário antes de sugerir um circuito.
+
 ## Máquinas
 
 O engenheiro **não roda no homelab**. Ele roda numa das suas máquinas e fala

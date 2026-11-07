@@ -1,0 +1,209 @@
+# Inventário de componentes físicos: Hefesto (telemetria do Gol) e Divine Machinery.
+#
+# Fonte única: este arquivo. A CLI (`engenheiro inventario`) lê daqui, e o
+# engenheiro vai consultá-lo a partir da fase 3 para saber o que você TEM
+# antes de sugerir compra ou montagem.
+#
+# Regra de honestidade (a mesma do resto do projeto): cada especificação diz
+# de onde veio.
+#   status:
+#     confirmado   -> visto na peça (marcação, foto) ou medido por você
+#     provavel     -> dedução a partir de marcações parciais; precisa confirmar
+#     a_confirmar  -> não sabemos; está aqui só o que precisa ser verificado
+#   fonte: de onde saiu a informação (foto de 2026-11-07, anúncio, medição...)
+#
+# Quantidade null = ainda não contada.
+# Para acrescentar uma peça nova, copie um bloco e preencha. `engenheiro
+# inventario --validar` confere se os campos obrigatórios estão certos.
+
+itens:
+
+  # ------------------------------------------------------------ microcontrolador
+  - id: esp32-devkit-38p
+    nome: Placa de desenvolvimento ESP32 (DevKit de 38 pinos)
+    categoria: microcontrolador
+    quantidade: 1
+    projetos: [hefesto, divine_machinery]
+    descricao_compra: "ESP32 Wifi + Bt SoC Inside iSM2.4G 802.11/b/g/n / Módulo WiFi ESP32 DevKitC S1 - Modelo 2"
+    especificacoes:
+      - {item: tipo, valor: "placa de desenvolvimento completa (não é só um módulo de Wi-Fi): tem USB, regulador e botões BOOT/RST", status: confirmado, fonte: foto 2026-11-07}
+      - {item: modulo, valor: "módulo blindado estilo WROOM-32, tampa marcada 'ESP-32 / Wi-Fi BT SoC Inside / iSM2.4G 802.11b/g/n' (sem o nome Espressif 'ESP32-WROOM-32'; provável módulo genérico/clone)", status: confirmado, fonte: foto 2026-11-07}
+      - {item: chip, valor: "ESP32 clássico (família ESP32-D0WD), não S2/S3/C3", status: provavel, fonte: "pinagem 34/35/36(SP)/39(SN) e SD0-SD3/CMD/CLK expostos, típica do ESP32 clássico; confirmar com esptool flash-id"}
+      - {item: psram, valor: "provavelmente sem PSRAM (formato WROOM, não WROVER)", status: provavel, fonte: "tamanho do módulo na foto; confirmar com um sketch que imprima ESP.getPsramSize() (o esptool não detecta PSRAM externa)"}
+      - {item: conversor_usb_serial, valor: "WCH CH9102X", status: confirmado, fonte: "marcação do CI na foto"}
+      - {item: regulador_3v3, valor: "AMS1117-3.3 (linear), marcação '1117 33'", status: confirmado, fonte: foto 2026-11-07}
+      - {item: capacitor_10uf_16v, valor: "capacitor SMD marcado '10 16V' perto do regulador", status: confirmado, fonte: foto 2026-11-07}
+      - {item: posicao_do_capacitor, valor: "provavelmente na alimentação de 5 V (entrada do regulador); a foto não mostra a trilha", status: provavel, fonte: "posição na placa; não verificado"}
+      - {item: conector, valor: micro-USB, status: confirmado, fonte: foto 2026-11-07}
+      - {item: pinos_lado_esquerdo, valor: "3V3, EN, SP(GPIO36), SN(GPIO39), G34, G35, G32, G33, G25, G26, G27, G14, G12, GND, G13, SD2, SD3, CMD, V5", status: confirmado, fonte: "serigrafia na foto (SP/SN = GPIO36/39 é convenção do ESP32 clássico)"}
+      - {item: pinos_lado_direito, valor: "GND, G23, G22, TXD, RXD, G21, GND, G19, G18, G5, G17, G16, G4, G0, G2, G15, SD1, SD0, CLK", status: confirmado, fonte: serigrafia na foto}
+    cuidados:
+      - "NÃO use SD0, SD1, SD2, SD3, CMD e CLK (GPIO 6 a 11): estão ligados à memória flash do módulo. Usar trava ou corrompe a placa."
+      - "G34, G35, SP(36) e SN(39) são SÓ entrada e não têm pull-up/pull-down interno: ótimos para sinais analógicos e entradas, inúteis como saída."
+      - "G0, G2, G5, G12 e G15 são pinos de strapping (definem o modo de boot): algo ligado neles pode impedir a placa de ligar ou gravar."
+      - "ADC2 (G0, G2, G4, G12-G15, G25-G27) não funciona com o Wi-Fi ligado: para telemetria por Wi-Fi, leia sensores analógicos no ADC1 (G32-G39)."
+      - "NUNCA ligue os 12 V do carro direto em V5 ou em 3V3. O V5 é a entrada de 5 V da placa (a mesma do USB), que vai para um regulador linear AMS1117; a placa não tem proteção contra os transientes do carro. Use o conversor step-down ajustado para 5 V, com fusível e proteção antes dele."
+      - "As entradas do ESP32 são de 3,3 V: qualquer sinal de 5 V ou 12 V precisa de divisor, optoacoplador ou conversor antes."
+    pendencias:
+      - "Confirmar chip, revisão e tamanho da flash com o esptool, e a PSRAM com um sketch (passo a passo em inventario/README.md)."
+      - "As restrições acima são do ESP32 clássico em geral; a tabela de pinos da fase 3 vai citar o datasheet da Espressif quando ele estiver indexado."
+
+  # ------------------------------------------------------------ alimentação
+  - id: buck-display
+    nome: Conversor DC-DC step-down (abaixador) com display de tensão
+    categoria: alimentacao
+    quantidade: null
+    projetos: [hefesto, divine_machinery]
+    especificacoes:
+      - {item: funcao, valor: "abaixar uma tensão maior (ex.: 12 V do carro) para 5 V, com voltímetro embutido", status: confirmado, fonte: descrição da compra}
+      - {item: ci_conversor, valor: "provavelmente LM2596 ou similar", status: a_confirmar, fonte: "comum nesse tipo de placa; ler a marcação do CI maior"}
+      - {item: tensao_entrada_max, valor: null, status: a_confirmar, fonte: "anúncio/datasheet do CI"}
+      - {item: corrente_max, valor: null, status: a_confirmar, fonte: "anúncio/datasheet do CI"}
+    cuidados:
+      - "Ajuste a saída para 5 V com o display (e confira com multímetro) ANTES de ligar o ESP32."
+      - "Ele não protege contra transientes do carro (load dump, partida), nem contra inversão de polaridade: precisa de fusível, diodo e supressor de transientes antes."
+    pendencias:
+      - "Foto do CI principal e do verso para identificar modelo e limites."
+
+  # ------------------------------------------------------------ isolação / interface
+  - id: optoacoplador-el817
+    nome: Optoacoplador EL817
+    categoria: interface
+    quantidade: null
+    projetos: [hefesto, divine_machinery]
+    especificacoes:
+      - {item: marcacao, valor: "EL 817 A511", status: confirmado, fonte: relato do usuário 2026-11-07}
+      - {item: modelo, valor: "EL817 (Everlight): optoacoplador de 1 canal, LED + fototransistor, encapsulamento DIP de 4 pinos", status: provavel, fonte: "marcação 'EL817'; confirmar no datasheet da Everlight"}
+      - {item: sufixo, valor: "'A' costuma indicar a faixa de CTR (ganho) e '511' o código de data", status: provavel, fonte: "convenção usual; confirmar no datasheet"}
+    cuidados:
+      - "É o componente certo para trazer sinais de 12 V do carro (luz de freio, ignição ligada, sinal de rotação) para o ESP32 com isolação galvânica."
+      - "O lado do LED precisa de resistor em série (e diodo de proteção reversa); calcule com os valores do datasheet, não de cabeça."
+      - "Sinal tirado do primário da bobina tem picos muito acima de 12 V: exige rede de proteção antes do optoacoplador. Nunca ligue no secundário (cabos de vela)."
+      - "Velocidade: confirmar no datasheet se o tempo de resposta atende à frequência do sinal de rotação desejado."
+    pendencias:
+      - "Contar quantos são."
+
+  - id: conversor-nivel-logico
+    nome: Conversor de nível lógico (marcação "MH")
+    categoria: interface
+    quantidade: 2
+    projetos: [divine_machinery, hefesto]
+    especificacoes:
+      - {item: modelo, valor: "provavelmente conversor bidirecional de 4 canais com MOSFETs (tipo BSS138), lados HV e LV", status: a_confirmar, fonte: "descrição do usuário; confirmar por foto (procure as marcações HV, LV, GND, HV1..HV4/LV1..LV4)"}
+      - {item: barras_de_pinos, valor: "as 'grades de portão' são barras de pinos (headers) que vêm soltas e precisam ser SOLDADAS na placa", status: provavel, fonte: descrição do usuário}
+    cuidados:
+      - "Serve para converter sinais LÓGICOS entre 3,3 V e 5 V (ex.: um módulo de 5 V conversando com o ESP32). NÃO serve para os 12 V do carro: para isso use divisor de tensão ou o optoacoplador."
+    pendencias:
+      - "Foto dos dois lados para confirmar o modelo."
+      - "Precisa de ferro de solda para os headers."
+
+  # ------------------------------------------------------------ saída / interface humana
+  - id: display-dst015
+    nome: Display "DST-015-D L25"
+    categoria: display
+    quantidade: null
+    projetos: [divine_machinery, hefesto]
+    especificacoes:
+      - {item: modelo, valor: null, status: a_confirmar, fonte: "marcação 'DST-015-D L25' não identificada; não vou chutar o tipo"}
+    pendencias:
+      - "Foto da frente e do verso (pinos e CI) para identificar: OLED, LCD de caracteres, 7 segmentos...?"
+
+  - id: buzzer-ativo-5v
+    nome: Buzzer ativo 5 V
+    categoria: saida
+    quantidade: null
+    projetos: [hefesto, divine_machinery]
+    especificacoes:
+      - {item: tipo, valor: "ativo (tem oscilador interno: basta alimentar para apitar, sem gerar frequência)", status: confirmado, fonte: descrição da compra}
+      - {item: tensao_nominal, valor: "5 V", status: confirmado, fonte: descrição da compra}
+      - {item: corrente, valor: null, status: a_confirmar, fonte: "medir ou ver anúncio"}
+    cuidados:
+      - "Não ligue direto num pino do ESP32: o pino é de 3,3 V e tem corrente limitada. Use um transistor (não há transistor no inventário ainda)."
+
+  - id: leds-kit
+    nome: LEDs (do kit de 100 resistores + 15 LEDs + 5 botões)
+    categoria: saida
+    quantidade: 15
+    projetos: [hefesto, divine_machinery]
+    especificacoes:
+      - {item: cores, valor: null, status: a_confirmar, fonte: contar}
+    cuidados:
+      - "Sempre com resistor em série; o valor depende da cor do LED e da tensão (conta pela ferramenta da fase 3)."
+
+  - id: push-buttons
+    nome: Botões de pressão (push buttons)
+    categoria: entrada
+    quantidade: 5
+    projetos: [hefesto, divine_machinery]
+    especificacoes:
+      - {item: origem, valor: "kit 100 resistores + 15 LEDs + 5 botões; o kit protoboard também traz botão(ões)", status: confirmado, fonte: descrição da compra}
+    cuidados:
+      - "Útil como push-to-talk da fase de voz. Use pull-up (interno ou resistor) e trate o bounce no código."
+
+  # ------------------------------------------------------------ passivos
+  - id: resistores-kit-600
+    nome: Kit de resistores 1/4 W 1% (30 valores x 20 = 600 peças)
+    categoria: passivo
+    quantidade: 600
+    projetos: [hefesto, divine_machinery]
+    especificacoes:
+      - {item: potencia, valor: "1/4 W", status: confirmado, fonte: descrição da compra}
+      - {item: tolerancia, valor: "1% (filme metálico, normalmente 5 faixas de cor)", status: provavel, fonte: "descrição da compra (1%); 5 faixas é o usual para 1%"}
+      - {item: valores, valor: null, status: a_confirmar, fonte: "a cartela/etiqueta do kit costuma listar os 30 valores; copie para cá"}
+    cuidados:
+      - "Terminais tortos não são problema: é só desentortar com cuidado. Resistor solto da fita também não tem problema; identifique pelo código de cores ou meça com multímetro antes de usar."
+      - "1% importa nos divisores de tensão para o ADC: a ferramenta da fase 3 calcula o erro com a tolerância."
+
+  - id: resistores-kit-100
+    nome: Resistores (kit 100 resistores + 15 LEDs + 5 botões)
+    categoria: passivo
+    quantidade: 100
+    projetos: [hefesto, divine_machinery]
+    especificacoes:
+      - {item: valores_e_tolerancia, valor: null, status: a_confirmar, fonte: "ver etiqueta do kit"}
+
+  - id: resistores-avulsos
+    nome: Resistores avulsos ("mais resistores")
+    categoria: passivo
+    quantidade: null
+    projetos: [hefesto, divine_machinery]
+    especificacoes:
+      - {item: valores, valor: null, status: a_confirmar, fonte: "código de cores ou multímetro"}
+    pendencias:
+      - "Separar por valor e etiquetar (saquinhos ou fita com o valor escrito)."
+
+  # ------------------------------------------------------------ montagem e teste
+  - id: protoboard-400-kit
+    nome: Kit protoboard 400 pontos + resistores + LED + botão + jumpers
+    categoria: montagem
+    quantidade: 1
+    projetos: [hefesto, divine_machinery]
+    especificacoes:
+      - {item: protoboard, valor: "400 pontos", status: confirmado, fonte: descrição da compra}
+      - {item: conteudo_exato, valor: null, status: a_confirmar, fonte: contar}
+    cuidados:
+      - "A placa ESP32 DevKit é larga: numa protoboard de 400 pontos ela pode cobrir as duas fileiras e deixar só um lado de pinos acessível. Teste o encaixe antes de planejar o circuito."
+      - "Protoboard é para bancada. No carro, a vibração solta jumpers: a versão final deve ser soldada ou com conectores travados."
+
+  - id: cabos-jacare
+    nome: Cabos com garra jacaré dupla
+    categoria: montagem
+    quantidade: 10
+    projetos: [hefesto, divine_machinery]
+    cuidados:
+      - "Ótimos para ligações temporárias de teste (ponta de prova, alimentação de bancada). Não use para corrente alta nem deixe no carro funcionando."
+
+# Coisas que fazem falta para a telemetria do carro com segurança. É sugestão
+# (inferência), não compra obrigatória: o engenheiro vai detalhar e justificar
+# com fontes na fase 3.
+faltando_sugerido:
+  - {item: multimetro, motivo: "indispensável para medir tensões do carro e conferir o conversor antes de ligar o ESP32. Você já tem um? Se tiver, adicione aos itens.", prioridade: alta}
+  - {item: ferro_de_solda_e_estanho, motivo: "soldar headers do conversor de nível e montar a versão final (protoboard não aguenta vibração).", prioridade: alta}
+  - {item: fusivel_e_porta_fusivel_inline, motivo: "todo circuito ligado aos 12 V do carro precisa do próprio fusível.", prioridade: alta}
+  - {item: diodos, motivo: "proteção contra inversão de polaridade e proteção do LED do optoacoplador.", prioridade: alta}
+  - {item: supressor_de_transientes_tvs, motivo: "proteção contra picos e load dump na entrada de alimentação.", prioridade: alta}
+  - {item: diodos_zener, motivo: "limitar tensão em entradas de sinal.", prioridade: media}
+  - {item: capacitores, motivo: "filtro de alimentação e filtros RC nas entradas do ADC (eletrolíticos e cerâmicos).", prioridade: media}
+  - {item: transistores_npn, motivo: "acionar o buzzer e outras cargas sem sobrecarregar o pino do ESP32.", prioridade: media}
+  - {item: conectores_derivacao_e_adaptadores_t, motivo: "derivar sinais do chicote sem cortar fio (restrição: nada permanente no carro).", prioridade: alta}
+  - {item: cabo_micro_usb_de_dados, motivo: "o ESP32 usa micro-USB; cabo só de carga não grava a placa.", prioridade: alta}

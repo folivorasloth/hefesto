@@ -307,6 +307,52 @@ def ver_rastro(
     con.print(Panel(Text(r.get("resposta_final", "")), title="Resposta final", title_align="left"))
 
 
+@app.command()
+def inventario(
+    arquivo: Path = typer.Option(Path("inventario/componentes.yaml"), "--arquivo", help="Arquivo do inventário"),
+    pendencias: bool = typer.Option(False, "--pendencias", help="Mostra só o que falta confirmar/contar"),
+    validar: bool = typer.Option(False, "--validar", help="Só valida o arquivo"),
+    projeto: Optional[str] = typer.Option(None, "--projeto", help="Filtra por projeto (hefesto, divine_machinery)"),
+):
+    """Lista os componentes que você tem (inventario/componentes.yaml)."""
+    from engenheiro import inventario as inv
+
+    try:
+        dados = inv.carregar(arquivo)
+    except inv.InventarioInvalido as e:
+        con.print(Text(str(e), style="red"))
+        raise typer.Exit(1)
+    if validar:
+        con.print(f"[green]Inventário válido:[/] {len(dados.itens)} itens.")
+        return
+    itens = [c for c in dados.itens if not projeto or projeto in c.projetos]
+    if pendencias:
+        for c in itens:
+            if not c.tem_pendencia:
+                continue
+            con.print(Text(f"{c.nome} [{c.id}]", style="bold"))
+            if c.quantidade is None:
+                con.print("  • contar quantos são")
+            for e in c.especificacoes:
+                if e.status != "confirmado":
+                    con.print(Text(f"  • {e.item} ({e.status}): {e.valor or '?'}  ← {e.fonte or ''}"))
+            for p in c.pendencias:
+                con.print(Text(f"  • {p}"))
+        return
+    t = Table(title="Inventário")
+    for col in ("id", "componente", "categoria", "qtd", "projetos", "a confirmar"):
+        t.add_column(col)
+    for c in sorted(itens, key=lambda c: (c.categoria, c.nome)):
+        faltam = sum(e.status != "confirmado" for e in c.especificacoes) + len(c.pendencias)
+        t.add_row(c.id, Text(c.nome), c.categoria, "?" if c.quantidade is None else str(c.quantidade),
+                  ", ".join(c.projetos), str(faltam) if faltam else "")
+    con.print(t)
+    if dados.faltando_sugerido:
+        con.print("\n[bold]Faltando (sugestão, prioridade):[/]")
+        for f in dados.faltando_sugerido:
+            con.print(Text(f"  • [{f.get('prioridade', '?')}] {f['item']}: {f.get('motivo', '')}"))
+
+
 @app.command("corpus-teste")
 def corpus_teste(destino: Path = typer.Option(Path("data/teste"), help="Pasta de saída")):
     """Gera PDFs FICTÍCIOS (marcados como tal) para testar ingestão e busca."""
