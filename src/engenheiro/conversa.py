@@ -138,6 +138,9 @@ class RespostaTurno:
     rastro_id: str | None = None
     propostas: list[Proposta] = field(default_factory=list)
     aplicadas: list[str] = field(default_factory=list)
+    fala: str = ""                    # o que ele diz em voz alta
+    espera_resposta: bool = False     # terminou com pergunta: ouvir sem palavra de ativação
+    problemas_criticos: list[str] = field(default_factory=list)
 
 
 # ------------------------------------------------------------------ funções puras (testáveis)
@@ -281,7 +284,7 @@ class Conversador:
                 self.sessao.turnos.append(Turno("usuario", fala_bruta, agora))
                 self.sessao.turnos.append(Turno("hefesto", texto, agora))
                 self.sessao.salvar(self.pasta)
-                return RespostaTurno(texto, aplicadas=aplicadas)
+                return RespostaTurno(texto, aplicadas=aplicadas, fala=texto)
 
         # Histórico ANTES da fala atual: no primeiro turno não há o que reescrever
         # (e não se gasta uma chamada ao modelo à toa).
@@ -301,6 +304,15 @@ class Conversador:
             partes.append(f"Quer que eu registre isso? (sim / não)\n{linhas}")
             self.sessao.pendentes = propostas
         texto = "\n\n".join(partes)
+        fala = " ".join(prefixo + [resp.fala or resp.texto])
+        if propostas:
+            fala += " Quer que eu anote " + "; e ".join(
+                (f"no caderno: {p.trecho_da_fala}" if p.tipo == "caderno" else
+                 f"no perfil que {p.campo.split('.')[-1].replace('_', ' ')} é {p.valor}"
+                 + ("" if p.status == "confirmado" else ", como suposição"))
+                for p in propostas) + "? Diga sim ou não."
         self.sessao.turnos.append(Turno("hefesto", resp.texto, datetime.now().isoformat(timespec="seconds"), resp.rastro_id))
         self.sessao.salvar(self.pasta)
-        return RespostaTurno(texto, resp.rastro_id, propostas, aplicadas)
+        return RespostaTurno(texto, resp.rastro_id, propostas, aplicadas, fala,
+                             espera_resposta=bool(propostas or resp.pergunta_ao_usuario),
+                             problemas_criticos=list(resp.problemas_criticos))

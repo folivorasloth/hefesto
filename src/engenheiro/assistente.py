@@ -24,7 +24,7 @@ from engenheiro import rastro
 from engenheiro.config import Config
 from engenheiro.eventos import Barramento
 from engenheiro.geracao import esquemas, gerador, prompts
-from engenheiro.geracao.montagem import montar_texto
+from engenheiro.geracao.montagem import montar_fala, montar_texto
 from engenheiro.llm import selecao
 from engenheiro.llm.ollama import LLM, OllamaIndisponivel, RespostaInvalida
 from engenheiro.persona import Persona
@@ -49,6 +49,7 @@ class RespostaFinal:
     pergunta_ao_usuario: str = ""
     temas_seguranca: list[str] = field(default_factory=list)
     observacoes: list[str] = field(default_factory=list)
+    fala: str = ""                 # versão para ser falada (fase de voz)
 
 
 class Engenheiro:
@@ -125,7 +126,7 @@ class Engenheiro:
                 r["conversa"] = {"erro": repr(e)}
         r["resposta_final"] = texto
         self._salvar(rid, r)
-        return RespostaFinal(texto, rid, "conversa", encontrou=True)
+        return RespostaFinal(texto, rid, "conversa", encontrou=True, fala=texto)
 
     def _traduzir(self, pergunta: str, r: dict, avisos: list[str]) -> str | None:
         if self.llm is None or not self.cfg.busca.rerank_com_traducao:
@@ -280,8 +281,10 @@ class Engenheiro:
         r["avisos"] = avisos
         r["resposta_final"] = texto
         self._salvar(rid, r)
+        fala = montar_fala(ger, ver, seg, self._ja_avisados)
+        r["fala"] = fala
         return RespostaFinal(texto, rid, "tecnico", encontrou, ver.problemas_criticos, ger.pergunta_ao_usuario,
-                             [t.tema for t in seg], avisos)
+                             [t.tema for t in seg], avisos, fala)
 
     def _sem_llm(self, pergunta, rid, r, relevantes, seg, avisos) -> RespostaFinal:
         if relevantes:
@@ -303,7 +306,9 @@ class Engenheiro:
         r["avisos"] = avisos
         r["resposta_final"] = texto
         self._salvar(rid, r)
-        return RespostaFinal(texto, rid, "tecnico", encontrou, temas_seguranca=[t.tema for t in seg], observacoes=avisos)
+        fala = montar_fala(None, None, seg, self._ja_avisados, nao_encontrei_padrao=miolo)
+        return RespostaFinal(texto, rid, "tecnico", encontrou, temas_seguranca=[t.tema for t in seg], observacoes=avisos,
+                             fala=fala)
 
     def _obs_novas(self, avisos: list[str]) -> list[str]:
         """Observações do sistema (ex.: "sem embedder") aparecem uma vez por

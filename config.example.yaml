@@ -99,3 +99,24 @@ web:
   maximo_resultados: 5
 
 perfil_veiculo: perfil_veiculo.yaml
+
+voz:
+  whisper_modelo: small        # tiny/base/small/medium (maior = entende melhor, mais lento)
+  whisper_compute_type: int8
+  dispositivo: cpu             # "cuda" se um dia tiver GPU NVIDIA
+  piper_voz: data/vozes/pt_BR-faber-medium.onnx
+  velocidade_fala: 1.0         # maior = mais devagar
+  volume: 1.0
+  mumbling: true               # "pensar em voz alta" a partir dos passos reais
+  volume_mumbling: 0.45
+  intervalo_minimo_mumbling_s: 4
+  silencio_fim_fala_ms: 900    # quanto silêncio encerra a sua fala
+  duracao_max_fala_s: 20
+  janela_resposta_s: 8         # depois de uma pergunta dele, ouve sem precisar dizer "Hefesto"
+  agressividade_vad: 2         # 0-3; garagem barulhenta: 2 ou 3
+  ativacao:
+    modo: transcricao          # transcricao | openwakeword | botao
+    palavra: Hefesto
+    modelo_openwakeword: ""    # modelo treinado para "Hefesto" (ver README)
+    limiar_openwakeword: 0.5
+    modelo_whisper_ativacao: tiny

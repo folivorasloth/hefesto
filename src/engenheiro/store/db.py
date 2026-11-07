@@ -67,7 +67,11 @@ class Banco:
         self.caminho = Path(caminho)
         if str(caminho) != ":memory:":
             self.caminho.parent.mkdir(parents=True, exist_ok=True)
-        self.con = sqlite3.connect(str(caminho))
+        # check_same_thread=False: no modo voz, a resposta é montada numa thread
+        # de trabalho (para o mumbling poder falar ao mesmo tempo). O acesso
+        # continua serializado: só um turno roda por vez, e a thread principal
+        # não toca no banco enquanto ele roda.
+        self.con = sqlite3.connect(str(caminho), check_same_thread=False)
         self.con.row_factory = sqlite3.Row
         self.con.execute("PRAGMA foreign_keys = ON")
         self.con.enable_load_extension(True)

@@ -114,3 +114,30 @@ def conversador(cfg: Config, bco: Banco, bus: Barramento, nova: bool = False, em
     prf = perfil(cfg)
     cad = caderno(cfg, bco, eng.rec.embedder, bus)
     return Conversador(eng, prf, cad, pasta, sessao)
+
+
+def loop_voz(cfg: Config, conv, modo_ativacao: str | None = None, dirigindo: bool = False, mostrar=None):
+    """Monta o loop de voz com microfone e alto-falante reais."""
+    from engenheiro.voz.ativacao import AtivacaoBotao, AtivacaoOpenWakeWord, AtivacaoTranscricao
+    from engenheiro.voz.audio import AltoFalanteSD, MicrofoneSD
+    from engenheiro.voz.orquestrador import LoopVoz
+    from engenheiro.voz.stt_tts import Sintetizador, Transcritor
+    from engenheiro.voz.vad import Recortador
+
+    v = cfg.voz
+    rec = Recortador(v.agressividade_vad, v.silencio_fim_fala_ms, v.duracao_max_fala_s)
+    stt = Transcritor(v.whisper_modelo, v.dispositivo, v.whisper_compute_type)
+    modo = modo_ativacao or v.ativacao.modo
+    if modo == "transcricao":
+        # Modelo pequeno só para achar a palavra; a pergunta usa o modelo principal.
+        stt_ativ = stt if v.ativacao.modelo_whisper_ativacao == v.whisper_modelo else \
+            Transcritor(v.ativacao.modelo_whisper_ativacao, v.dispositivo, v.whisper_compute_type)
+        ativ = AtivacaoTranscricao(rec, stt_ativ, v.ativacao.palavra, transcritor_principal=stt)
+    elif modo == "openwakeword":
+        ativ = AtivacaoOpenWakeWord(v.ativacao.modelo_openwakeword, v.ativacao.limiar_openwakeword)
+    elif modo == "botao":
+        ativ = AtivacaoBotao()
+    else:
+        raise ValueError(f"voz.ativacao.modo inválido: {modo} (transcricao | openwakeword | botao)")
+    sint = Sintetizador(cfg.caminho(v.piper_voz), v.velocidade_fala)
+    return LoopVoz(conv, MicrofoneSD(), AltoFalanteSD(), sint, stt, ativ, rec, v, dirigindo, mostrar)

@@ -24,6 +24,7 @@ dependencies = [
 ingestao = ["docling>=2.60", "pypdfium2"]
 reranker = ["sentence-transformers>=3"]
 dev = ["pytest>=8", "reportlab>=4"]
+voz = ["faster-whisper>=1.0", "piper-tts>=1.3", "sounddevice>=0.4", "webrtcvad-wheels>=2.0", "openwakeword>=0.4", "numpy", "scipy"]
 
 [project.scripts]
 engenheiro = "engenheiro.interfaces.cli:app"
@@ -37,8 +38,9 @@ engenheiro = ["store/*.sql"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # Os testes lentos ficam fora por padrão: rode com `pytest -m docling`.
-addopts = '-m "not docling and not reranker"'
+addopts = '-m "not docling and not reranker and not voz"'
 markers = [
     "docling: roda o Docling de verdade (lento, baixa modelos na primeira vez)",
     "reranker: baixa e roda o bge-reranker-v2-m3 (lento)",
+    "voz: Piper + Whisper de verdade (precisa da voz baixada)",
 ]

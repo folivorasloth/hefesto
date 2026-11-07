@@ -509,6 +509,81 @@ def conversar(
         con.print(Panel(Text(resp.texto), title=escape(nome), title_align="left", border_style="cyan"))
 
 
+# ---------------------------------------------------------------- voz
+@app.command()
+def voz(
+    botao: bool = typer.Option(False, "--botao", help="Ativação só pelo Enter (botão de falar)"),
+    dirigindo: bool = typer.Option(False, "--dirigindo", help="Começa no modo dirigindo"),
+    sem_mumbling: bool = typer.Option(False, "--sem-mumbling"),
+    nova: bool = typer.Option(False, "--nova", help="Conversa nova"),
+    config: Optional[Path] = OpcConfig,
+    indice: Optional[Path] = OpcIndice,
+):
+    """Conversa por voz: diga "Hefesto, ..." (ou aperte Enter com --botao)."""
+    cfg = carregar_config(config)
+    if sem_mumbling:
+        cfg.voz.mumbling = False
+    bus = Barramento()
+    conv = fabrica.conversador(cfg, fabrica.banco(cfg, indice), bus, nova)
+
+    def mostrar(quem: str, texto: str) -> None:
+        estilos = {"voce": ("Você", "green"), "hefesto": (conv.eng.persona.nome, "cyan"), "alerta": ("ALERTA", "red")}
+        nome, cor = estilos[quem]
+        con.print(Panel(Text(texto), title=escape(nome), title_align="left", border_style=cor))
+
+    con.print("[dim]Carregando voz e transcrição (a primeira vez baixa os modelos)...[/]")
+    loop = fabrica.loop_voz(cfg, conv, "botao" if botao else None, dirigindo, mostrar)
+    if conv.eng.llm is None:
+        con.print(f"[yellow]Ollama inacessível em {cfg.ollama.url}: ele vai ouvir, mas só consegue apontar trechos.[/]")
+    dica = "aperte Enter e fale" if botao else f'diga "{cfg.voz.ativacao.palavra}, ..."'
+    con.print(f"[bold]{escape(conv.eng.persona.nome)}[/] ouvindo: {dica}. Ctrl+C para sair. "
+              '[dim]Comandos de voz: "modo dirigindo", "parei", "nova conversa".[/]')
+    try:
+        loop.rodar()
+    except KeyboardInterrupt:
+        con.print()
+
+
+voz_app = typer.Typer(help="Testes de áudio para montar a garagem")
+app.add_typer(voz_app, name="audio")
+
+
+@voz_app.command("falar")
+def audio_falar(texto: str = typer.Argument("Olá, eu sou o Hefesto. A tensão medida foi de 12,6 V."),
+                config: Optional[Path] = OpcConfig):
+    """Testa o alto-falante e a voz."""
+    from engenheiro.voz.audio import AltoFalanteSD
+    from engenheiro.voz.stt_tts import Sintetizador
+
+    cfg = carregar_config(config)
+    sint, alto = Sintetizador(cfg.caminho(cfg.voz.piper_voz), cfg.voz.velocidade_fala), AltoFalanteSD()
+    for audio, taxa in sint.frases(texto):
+        alto.tocar(audio, taxa, cfg.voz.volume)
+
+
+@voz_app.command("ouvir")
+def audio_ouvir(config: Optional[Path] = OpcConfig):
+    """Testa o microfone: fale uma frase e veja a transcrição."""
+    from engenheiro.voz.ativacao import detectar_palavra
+    from engenheiro.voz.audio import MicrofoneSD
+    from engenheiro.voz.stt_tts import Transcritor
+    from engenheiro.voz.vad import Recortador
+
+    cfg = carregar_config(config)
+    v = cfg.voz
+    stt = Transcritor(v.whisper_modelo, v.dispositivo, v.whisper_compute_type)
+    mic = MicrofoneSD()
+    con.print("Fale agora (ex.: \"Hefesto, onde fica a bobina?\")...")
+    fala = Recortador(v.agressividade_vad, v.silencio_fim_fala_ms, v.duracao_max_fala_s).proxima_fala(mic.quadros(), timeout_s=15)
+    mic.fechar()
+    if not fala:
+        con.print("[yellow]Não ouvi nada em 15 s. Confira o microfone padrão do sistema e a agressividade_vad.[/]")
+        raise typer.Exit(1)
+    texto = stt.transcrever(fala)
+    ativou, resto = detectar_palavra(texto, v.ativacao.palavra)
+    con.print(Text(f"Ouvi: {texto}\nPalavra de ativação: {'sim' if ativou else 'não'}; pergunta: {resto if ativou else '-'}"))
+
+
 @app.command("corpus-teste")
 def corpus_teste(destino: Path = typer.Option(Path("data/teste"), help="Pasta de saída")):
     """Gera PDFs FICTÍCIOS (marcados como tal) para testar ingestão e busca."""

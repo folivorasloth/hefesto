@@ -112,6 +112,36 @@ class Ferramentas(BaseModel):
     max_rodadas: int = 4
 
 
+class Ativacao(BaseModel):
+    # "transcricao": transcreve trechos de fala e procura a palavra no começo
+    #   (funciona já, sem treinar nada; gasta mais CPU).
+    # "openwakeword": detector dedicado (leve). Precisa de um modelo da
+    #   palavra; para "Hefesto" ele tem que ser treinado (ver README).
+    # "botao": só botão de falar (Enter no terminal).
+    modo: str = "transcricao"
+    palavra: str = "Hefesto"
+    modelo_openwakeword: str = ""          # caminho do .onnx/.tflite treinado
+    limiar_openwakeword: float = 0.5
+    modelo_whisper_ativacao: str = "tiny"  # modelo pequeno só para achar a palavra
+
+
+class Voz(BaseModel):
+    whisper_modelo: str = "small"          # tiny/base/small/medium: maior = melhor e mais lento
+    whisper_compute_type: str = "int8"
+    dispositivo: str = "cpu"
+    piper_voz: Path = Path("data/vozes/pt_BR-faber-medium.onnx")
+    velocidade_fala: float = 1.0           # >1 fala mais devagar (length_scale do Piper)
+    volume: float = 1.0
+    mumbling: bool = True
+    volume_mumbling: float = 0.45
+    intervalo_minimo_mumbling_s: float = 4.0
+    silencio_fim_fala_ms: int = 900        # silêncio que encerra a sua fala
+    duracao_max_fala_s: float = 20.0
+    janela_resposta_s: float = 8.0         # depois que ele pergunta algo, ouve sem palavra de ativação
+    agressividade_vad: int = 2             # 0-3: maior ignora mais ruído (garagem: 2 ou 3)
+    ativacao: Ativacao = Field(default_factory=Ativacao)
+
+
 class Web(BaseModel):
     # URL do seu SearXNG (ver docker/searxng/). Vazio = busca web desligada.
     searxng_url: str = ""
@@ -147,6 +177,7 @@ class Config(BaseModel):
     verificador: Verificador = Field(default_factory=Verificador)
     ferramentas: Ferramentas = Field(default_factory=Ferramentas)
     web: Web = Field(default_factory=Web)
+    voz: Voz = Field(default_factory=Voz)
     perfil_veiculo: Path = Path("perfil_veiculo.yaml")
 
     # Pasta raiz do projeto (onde fica o config.yaml e dados_ref/).

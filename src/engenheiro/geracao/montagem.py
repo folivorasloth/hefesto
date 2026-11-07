@@ -144,3 +144,65 @@ def montar_texto(
         # No modo guiado, a pergunta fecha a resposta: é o que a pessoa responde em seguida.
         blocos.append(f"➜ {r.pergunta_ao_usuario}")
     return "\n\n".join(blocos)
+
+
+# ---------------------------------------------------------------- versão falada
+def _citacao_falada(cit: str) -> str:
+    """'[Denton, p. 45]' -> 'Denton, página 45'; '[cálculo: lei_de_ohm]' -> 'pela conta'."""
+    c = cit.strip("[]")
+    if c.startswith("cálculo"):
+        return "pela conta"
+    if c.startswith("web"):
+        return "na internet"
+    c = c.replace("pp. ", "páginas ").replace("p. ", "página ").replace("–", " a ")
+    return c
+
+
+def montar_fala(
+    r: RespostaGerada | None,
+    v: Verificacao | None,
+    avisos_seguranca: list[AvisoTema],
+    temas_ja_avisados: set[str] | None = None,
+    nao_encontrei_padrao: str | None = None,
+) -> str:
+    """O que o Hefesto FALA: mais curto que o texto da tela, na ordem certa
+    para ouvir. Problema crítico primeiro; depois as fontes (com o livro e a
+    página ditos de forma natural), a inferência, o conhecimento geral, o
+    que não achou, a segurança nova, e por último a pergunta para você.
+    Afirmações removidas pelo verificador NÃO são faladas (estão na tela)."""
+    partes: list[str] = []
+    if v and v.problemas_criticos:
+        partes.append("Atenção antes de tudo: " + " ".join(v.problemas_criticos))
+    if v and not v.executada and v.motivo_nao_executada:
+        partes.append("Esta resposta não passou pelo verificador.")
+    if r is None:
+        if nao_encontrei_padrao:
+            partes.append(nao_encontrei_padrao.split(":")[0] + ". Os trechos estão na tela.")
+    else:
+        por_id = {t.id: t for t in r.contexto}
+        vivas = [a for a in r.afirmacoes if a.status != "removida"]
+        for a in vivas:
+            if a.tipo == "fonte":
+                cits = [_citacao_falada(por_id[t].citacao) for t in a.trechos if t in por_id]
+                partes.append(a.texto + (f" Segundo {', '.join(dict.fromkeys(cits))}." if cits else ""))
+        infer = [a.texto for a in vivas if a.tipo == "inferencia"]
+        if infer:
+            partes.append("Pelo meu raciocínio, sem estar escrito nas fontes: " + " ".join(infer))
+        geral = [a.texto for a in vivas if a.tipo == "geral"]
+        if geral:
+            partes.append("Sem fonte, só para te orientar: " + " ".join(geral))
+        web = [a.texto for a in vivas if a.tipo == "web"]
+        if web:
+            partes.append("Da internet, sem verificação: " + " ".join(web))
+        if not any(a.tipo == "fonte" for a in vivas) and not geral:
+            partes.append("Não encontrei isso nas suas fontes." + (f" {r.falta}" if r.falta else ""))
+        if any(a.status == "removida" for a in r.afirmacoes):
+            partes.append("Tirei da resposta algumas afirmações que não consegui confirmar; estão na tela.")
+    ja = temas_ja_avisados or set()
+    novos = [t for t in avisos_seguranca if t.tema not in ja]
+    if novos:
+        # Falado: só o PRIMEIRO aviso de cada tema novo (o completo está na tela).
+        partes.append("Cuidado: " + " ".join(t.avisos[0] for t in novos if t.avisos))
+    if r is not None and r.pergunta_ao_usuario:
+        partes.append(r.pergunta_ao_usuario)
+    return " ".join(p.strip() for p in partes if p.strip())

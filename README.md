@@ -19,7 +19,7 @@ O identificador técnico é `engenheiro`. Nome, tom e exemplos ficam em
 | 2 | Respostas com citações + verificador, segurança determinística, persona, rastro completo | **pronta** (validar com o seu Ollama) |
 | 3 | Ferramentas de cálculo, pinos do ESP32, perfil do veículo, caderno de bordo, busca web (SearXNG) | **pronta** (validar com o seu Ollama) |
 | Conversa | Conversa contínua com memória, modo guiado, conhecimento geral rotulado, aprende com confirmação | **pronta** (validar com o seu Ollama) |
-| 5 | Voz: palavra de ativação "Hefesto", botão de falar, mumbling | próxima |
+| 5 | Voz: palavra de ativação "Hefesto", botão de falar, mumbling, interrupção, modo dirigindo | **pronta** (validar com microfone real) |
 | 4 | Avaliação completa (fatos-chave, citações, "não sei") | parcial (modos `recuperacao` e `resposta`) |
 | 6 | API HTTP e MQTT | — |
 
@@ -105,6 +105,110 @@ Hefesto: Anotado: ...
   Observações do sistema aparecem uma vez. Tudo fica no rastro.
 
 As conversas ficam em `data/conversas/`.
+
+## Falando com o Hefesto (voz)
+
+Na máquina da garagem (a que tem microfone e caixa de som), instale as
+dependências de voz:
+
+```bash
+sudo apt install libportaudio2
+```
+
+```bash
+pip install -e ".[voz]"
+```
+
+Baixe a voz em português (cerca de 60 MB):
+
+```bash
+python -m piper.download_voices --download-dir data/vozes pt_BR-faber-medium
+```
+
+Teste o alto-falante e o microfone:
+
+```bash
+engenheiro audio falar
+```
+
+```bash
+engenheiro audio ouvir
+```
+
+O primeiro fala uma frase de teste. O segundo ouve você e mostra a
+transcrição, dizendo se reconheceu "Hefesto". Depois, ligue:
+
+```bash
+engenheiro voz
+```
+
+Para usar só o botão de falar (Enter), que é o mais confiável com barulho:
+
+```bash
+engenheiro voz --botao
+```
+
+O Whisper "small" e o modelo tiny da ativação são baixados na primeira vez.
+
+### Como funciona
+
+- **Ativação:** diga "Hefesto, onde fica a bobina?" de uma vez, ou só "Hefesto"
+  e espere o "Pois não?". Com `--botao`, aperte Enter e fale.
+- **Conversa guiada por voz:** quando ele termina com uma pergunta ("quantos fios
+  você vê?") ou pede confirmação ("quer que eu anote?"), ele ouve a resposta por
+  `voz.janela_resposta_s` segundos **sem precisar dizer "Hefesto" de novo**.
+- **Mumbling:** enquanto pensa, ele fala baixinho o que está realmente fazendo:
+  "deixa eu ver na parte de ignição...", "achei 3 trechos, no Denton...",
+  "conferindo os pinos do ESP32...". Cada frase vem de um passo real do
+  processamento; se o passo não aconteceu, a frase não existe. Para desligar,
+  use `--sem-mumbling` ou `voz.mumbling: false`.
+- **O que ele fala:** uma versão curta da resposta.
+  - O problema crítico vem primeiro e a pergunta para você por último.
+  - As fontes são ditas como "segundo Denton, página 45".
+  - As unidades são lidas por extenso ("12,6 volts").
+  - O que o verificador removeu não é falado, e o resto fica na tela.
+  - De cada tema de segurança novo, ele fala o primeiro aviso; a lista completa
+    fica na tela.
+- **Interrupção:** diga "Hefesto" (ou aperte Enter no modo botão) enquanto ele
+  fala, e ele para. Ele **não** para com qualquer voz: sem cancelamento de eco,
+  a própria fala dele, captada pelo microfone, o interromperia.
+- **Comandos de voz:**
+  - "modo dirigindo": silêncio total, as respostas ficam guardadas e só alertas
+    críticos são falados;
+  - "parei": sai do modo dirigindo e ele lê o que ficou guardado;
+  - "nova conversa".
+
+### Ajustes para a garagem
+
+| Problema | Ajuste no config |
+|---|---|
+| Barulho dispara a escuta | `voz.agressividade_vad: 3` |
+| Ele corta você no meio da frase | aumente `voz.silencio_fim_fala_ms` |
+| Entende mal | `voz.whisper_modelo: medium` (no teste, acertou frases que o small errou; leva cerca de 5 s por fala na CPU) |
+| CPU alta esperando a palavra | `voz.ativacao.modo: openwakeword` (veja abaixo) ou botão |
+
+### Palavra de ativação dedicada (opcional)
+
+O modo padrão (`transcricao`) transcreve tudo o que é falado perto do
+microfone para achar "Hefesto". Ele funciona sem preparo, mas usa CPU. O
+openWakeWord é muito mais leve, porém só traz palavras em inglês prontas. Para
+"Hefesto", é preciso treinar um modelo: o openWakeWord tem um notebook de
+treino que gera exemplos sintéticos da palavra (dá para usar a voz pt_BR do
+Piper). Depois, aponte `voz.ativacao.modelo_openwakeword` para o arquivo
+gerado e use `voz.ativacao.modo: openwakeword`.
+
+### O que já foi testado e o que falta
+
+Testado aqui, sem placa de som:
+- a voz do Piper falando a pergunta, o recorte por VAD, o Whisper transcrevendo
+  e a palavra de ativação reconhecida;
+- o loop completo em tempo simulado: ativação, resposta falada, ouvir a
+  resposta sem a palavra, e o "sim";
+- o que funcionou: "Hefesto" (até transcrito como "Efesto"), "sim" e "não";
+- o que errou: "tem três fios" virou "tentei os fios" na voz sintética. A
+  proteção do aprendizado **descartou** o fato em vez de gravar errado.
+
+Falta testar com o microfone e a voz real, na garagem.
 
 ## Perguntando (fase 2)
 
