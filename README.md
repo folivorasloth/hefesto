@@ -20,7 +20,7 @@ O identificador técnico é `engenheiro`. Nome, tom e exemplos ficam em
 | 3 | Ferramentas de cálculo, pinos do ESP32, perfil do veículo, caderno de bordo, busca web (SearXNG) | **pronta** (validar com o seu Ollama) |
 | Conversa | Conversa contínua com memória, modo guiado, conhecimento geral rotulado, aprende com confirmação | **pronta** (validar com o seu Ollama) |
 | 5 | Voz: palavra de ativação "Hefesto", botão de falar, mumbling, interrupção, modo dirigindo | **pronta** (validar com microfone real) |
-| 4 | Avaliação completa (fatos-chave, citações, "não sei") | parcial (modos `recuperacao` e `resposta`) |
+| 4 | Avaliação completa: fatos-chave com unidade, citação na fonte certa, "não sei", cenários de conversa, comparação | **pronta** |
 | 6 | API HTTP e MQTT | — |
 
 ## Como funciona (fase 1)
@@ -598,21 +598,53 @@ embedders diferentes.
 
 ## Avaliação
 
-`eval/perguntas.yaml` é o seu conjunto de perguntas. Ele vem com modelos
-desativados; preencha com perguntas reais depois de indexar os livros. Rode:
+A avaliação faz parte da definição de pronto: toda mudança (modelo, prompt,
+limiar, corte) deve ser medida antes e depois.
+
+| Modo | O que mede | Precisa do Ollama |
+|---|---|---|
+| `recuperacao` | A fonte certa aparece nos trechos? (acerto@k, MRR, scores do reranker) | não |
+| `resposta` | O assistente completo, pelo modo `perguntar` | sim |
+| `conversa` | O mesmo, pelo modo conversa (modelo rápido em orientação) | sim |
+| `completo` | Recuperação e resposta no mesmo relatório | sim |
+| `cenarios` | Conversas de vários turnos (`eval/cenarios.yaml`) | sim |
 
 ```bash
-engenheiro avaliar
+engenheiro avaliar --modo completo
 ```
 
-O relatório (`eval/relatorios/*.md` e `.json`) mostra:
+```bash
+engenheiro avaliar --modo cenarios
+```
 
-- acerto@k e MRR;
-- acerto nas perguntas críticas;
-- quantas fontes certas foram recuperadas, mas o reranker cortou;
-- o score do reranker nos acertos e nas perguntas fora da base;
-- a comparação com a execução anterior: o que melhorou e **o que piorou**,
-  pergunta por pergunta.
+**Métricas de resposta:**
+- `nao_sei_correto`: disse "não encontrei" quando a informação não estava na base?
+- `falso_nao_sei`: disse "não encontrei" quando a informação estava lá?
+- `fonte_aprovada`: das afirmações exibidas como fonte, quantas o verificador
+  aprovou. Deve ser 1.0.
+- `citacao_na_fonte_esperada`: ele cita o livro **certo**?
+- `fatos_chave` e `fatos_chave_criticas`: comparação com unidade, então
+  "0,15 A" conta como "150 mA", mas não como "0,15 V".
+- `geral_violacoes`: quantas vezes o modelo tentou pôr valor sem fonte no
+  "conhecimento geral".
+- `respostas_com_problema_critico`.
+- Tempo médio, mediana e máximo: é o número que diz se a GPU faz falta.
+
+**Relatórios:** cada execução grava `eval/relatorios/*.md` e `*.json`, com a
+configuração usada, e compara com a execução anterior do mesmo arquivo,
+pergunta por pergunta, listando o que melhorou e **o que piorou**. Com
+`--falhar-se-piorar`, o comando sai com erro se algo piorou.
+
+**Seus arquivos:**
+- `eval/perguntas.yaml`: modelos desativados para você preencher com perguntas
+  reais. Inclua algumas cuja resposta NÃO está na base.
+- `eval/cenarios.yaml`: conversas de exemplo que valem mesmo com a base vazia.
+  A avaliação de cenários usa uma cópia do perfil: não grava no perfil do seu
+  carro.
+- `eval/perguntas_corpus_teste.yaml`: perguntas sobre o corpus fictício.
+
+**Calibrar o limiar de relevância:** compare `score_rerank_min_dos_acertos`
+com `score_rerank_max_fora_da_base`, no modo `recuperacao`.
 
 ## Testes
 

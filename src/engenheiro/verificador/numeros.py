@@ -6,9 +6,12 @@ Isto é código, não LLM, de propósito: um LLM verificador pode "achar" que
 17,3 e 17,8 são parecidos o bastante. Aqui ou o valor aparece na origem ou
 ele é marcado como suspeito.
 
-Limitação conhecida (fase 2): compara só o VALOR, não a unidade. "12 V" na
-afirmação casa com "12 A" na fonte. A coerência da unidade fica a cargo do
-verificador LLM; a conversão de unidades (pint) entra na fase 3.
+Desde a fase 4, a UNIDADE também conta: quando o número da afirmação tem
+unidade ("12 V"), a origem precisa ter o mesmo valor na mesma grandeza
+("12 V", "12000 mV") ou o número sem unidade. Assim "12 V" não é mais
+"confirmado" por um "12 A", nem "2 A" por um "2ª marcha". Prefixos são
+convertidos (mV, kΩ, mA...). Número sem unidade na afirmação continua
+aceitando qualquer ocorrência do valor.
 """
 
 from __future__ import annotations
@@ -55,6 +58,53 @@ def _interpretacoes(tok: str) -> set[float]:
     return valores
 
 
+# Unidade logo depois do número -> (grandeza canônica, fator para a unidade base).
+# Maiúsculas importam: "2 A" é ampère, "de 2 a 5" não é.
+_UNIDADES: list[tuple[str, str, float]] = [
+    (r"kV", "V", 1e3), (r"mV", "V", 1e-3), (r"V", "V", 1.0),
+    (r"mA", "A", 1e-3), (r"µA|uA", "A", 1e-6), (r"A", "A", 1.0),
+    (r"MΩ|Mohms?", "ohm", 1e6), (r"kΩ|kohms?|K(?=\b)", "ohm", 1e3), (r"Ω|ohms?", "ohm", 1.0),
+    (r"kW", "W", 1e3), (r"mW", "W", 1e-3), (r"W", "W", 1.0),
+    (r"kHz", "Hz", 1e3), (r"Hz", "Hz", 1.0),
+    (r"N\s*[·.\-]?\s*m", "N.m", 1.0), (r"kgf\s*[·.]?\s*m", "kgf.m", 1.0),
+    (r"mm²|mm2", "mm2", 1.0), (r"mm", "m", 1e-3), (r"cm", "m", 1e-2), (r"km(?!/)", "m", 1e3),
+    (r"km/h", "km/h", 1.0), (r"rpm", "rpm", 1.0), (r"°C|ºC", "C", 1.0), (r"%", "%", 1.0),
+    (r"psi", "psi", 1.0), (r"bar", "bar", 1.0),
+    (r"µF|uF", "F", 1e-6), (r"nF", "F", 1e-9), (r"pF", "F", 1e-12),
+    (r"ms", "s", 1e-3), (r"s(?=\b)", "s", 1.0),
+    (r"[ªº]", "ordinal", 1.0),
+]
+_RE_QUANTIDADE = re.compile(
+    r"(?<![\w.,])(\d+(?:[.,]\d+)*)(?![.,]?\d)\s*(" + "|".join(f"(?:{u})" for u, _, _ in _UNIDADES) + r")?(?![\w²])"
+)
+_RE_UNIDADES_COMPILADAS = [(re.compile(rf"^(?:{u})$"), g, f) for u, g, f in _UNIDADES]
+
+
+def _unidade(txt: str | None) -> tuple[str, float] | None:
+    if not txt:
+        return None
+    for rx, grandeza, fator in _RE_UNIDADES_COMPILADAS:
+        if rx.match(txt):
+            return grandeza, fator
+    return None
+
+
+def quantidades(texto: str) -> list[tuple[str, set[float], str | None]]:
+    """[(token, leituras na unidade base, grandeza ou None)]."""
+    texto = _RE_ID_TRECHO.sub(" ", texto)
+    saida = []
+    for m in _RE_QUANTIDADE.finditer(texto):
+        tok = m.group(1).strip(".,")
+        u = _unidade(m.group(2))
+        leituras = _interpretacoes(tok)
+        if u:
+            grandeza, fator = u
+            saida.append((tok, {round(v * fator, 9) for v in leituras}, grandeza))
+        else:
+            saida.append((tok, leituras, None))
+    return saida
+
+
 def extrair_numeros(texto: str) -> list[str]:
     texto = _RE_ID_TRECHO.sub(" ", texto)
     return [m.group(1).strip(".,") for m in _RE_NUMERO.finditer(texto)]
@@ -68,12 +118,25 @@ def valores_em(texto: str) -> set[float]:
 
 
 def numeros_sem_origem(afirmacao: str, origens: list[str]) -> list[str]:
-    """Números da afirmação que não aparecem em nenhum texto de origem."""
-    disponiveis: set[float] = set()
+    """Números da afirmação sem origem verificável (valor + unidade)."""
+    com_unidade: dict[str, set[float]] = {}
+    sem_unidade: set[float] = set()
+    todos: set[float] = set()
     for o in origens:
-        disponiveis |= valores_em(o)
+        for _, leituras, grandeza in quantidades(o):
+            todos |= leituras
+            if grandeza is None:
+                sem_unidade |= leituras
+            else:
+                com_unidade.setdefault(grandeza, set()).update(leituras)
+        # Leituras "brutas" (sem converter prefixo), para afirmação sem unidade.
+        todos |= valores_em(o)
     suspeitos = []
-    for tok in extrair_numeros(afirmacao):
-        if not (_interpretacoes(tok) & disponiveis):
+    for tok, leituras, grandeza in quantidades(afirmacao):
+        if grandeza is None:
+            ok = bool(leituras & todos)
+        else:
+            ok = bool(leituras & com_unidade.get(grandeza, set())) or bool(_interpretacoes(tok) & sem_unidade)
+        if not ok:
             suspeitos.append(tok)
     return suspeitos

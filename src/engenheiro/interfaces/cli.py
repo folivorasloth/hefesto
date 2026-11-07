@@ -182,42 +182,83 @@ def status(config: Optional[Path] = OpcConfig, indice: Optional[Path] = OpcIndic
 @app.command()
 def avaliar(
     perguntas: Path = typer.Option(Path("eval/perguntas.yaml"), "--perguntas", help="Arquivo de perguntas"),
-    modo: str = typer.Option("recuperacao", help="recuperacao (só busca) ou resposta (assistente completo)"),
+    modo: str = typer.Option("recuperacao", help="recuperacao | resposta | conversa | completo | cenarios"),
+    cenarios: Path = typer.Option(Path("eval/cenarios.yaml"), "--cenarios", help="Arquivo de cenários (modo cenarios)"),
     config: Optional[Path] = OpcConfig,
     indice: Optional[Path] = OpcIndice,
     sem_rerank: bool = typer.Option(False, "--sem-rerank"),
     saida: Path = typer.Option(Path("eval/relatorios"), "--saida", help="Pasta dos relatórios"),
+    falhar_se_piorar: bool = typer.Option(False, "--falhar-se-piorar", help="Sai com erro se algo piorou em relação à execução anterior"),
     embedder_falso: bool = OpcFalso,
 ):
-    """Roda a avaliação e grava um relatório comparável com a execução anterior."""
+    """Roda a avaliação e grava um relatório comparável com a execução anterior.
+
+    recuperacao: só a busca (rápido, sem LLM). resposta: assistente completo.
+    conversa: idem, pelo modo conversa. completo: busca + resposta.
+    cenarios: conversas de vários turnos (eval/cenarios.yaml)."""
     from engenheiro import avaliacao
 
-    if modo not in ("recuperacao", "resposta"):
-        con.print("[red]Modos: 'recuperacao' (só busca) ou 'resposta' (assistente completo, precisa do Ollama).[/]")
+    modos = ("recuperacao", "resposta", "conversa", "completo", "cenarios")
+    if modo not in modos:
+        con.print(f"[red]Modo inválido. Use um de: {', '.join(modos)}[/]")
         raise typer.Exit(2)
     cfg = carregar_config(config)
-    lista = avaliacao.carregar_perguntas(perguntas)
+    sr = False if sem_rerank else None
+    arquivo = cenarios if modo == "cenarios" else perguntas
+    if modo == "cenarios":
+        lista = avaliacao.carregar_cenarios(cenarios)
+    else:
+        lista = avaliacao.carregar_perguntas(perguntas)
     if not lista:
-        con.print(f"[yellow]Nenhuma pergunta ativa em {perguntas}.[/]")
+        con.print(f"[yellow]Nada ativo em {arquivo}.[/]")
         raise typer.Exit(2)
-    if modo == "resposta":
-        eng = fabrica.engenheiro(cfg, fabrica.banco(cfg, indice), Barramento(), embedder_falso, False if sem_rerank else None)
+
+    if modo == "recuperacao":
+        rec = fabrica.recuperador(cfg, fabrica.banco(cfg, indice), fabrica.embedder(cfg, embedder_falso), Barramento(), sr)
+        res = avaliacao.avaliar_recuperacao(rec, lista, cfg.busca.final)
+    else:
+        eng = fabrica.engenheiro(cfg, fabrica.banco(cfg, indice), Barramento(), embedder_falso, sr)
         if eng.llm is None:
-            con.print(f"[red]Ollama inacessível em {cfg.ollama.url}: o modo 'resposta' precisa do LLM.[/]")
+            con.print(f"[red]Ollama inacessível em {cfg.ollama.url}: o modo '{modo}' precisa do LLM.[/]")
             raise typer.Exit(2)
         rec = eng.rec
-        res = avaliacao.avaliar_respostas(eng, lista, cfg.caminho(cfg.caminhos.rastros))
-    else:
-        rec = fabrica.recuperador(cfg, fabrica.banco(cfg, indice), fabrica.embedder(cfg, embedder_falso), Barramento(),
-                                  False if sem_rerank else None)
-        res = avaliacao.avaliar_recuperacao(rec, lista, cfg.busca.final)
+        rastros = cfg.caminho(cfg.caminhos.rastros)
+        if modo == "cenarios":
+            from engenheiro.conversa import Conversador, Sessao
+
+            pasta = cfg.caminho(cfg.caminhos.rastros).parent / "conversas_avaliacao"
+
+            def criar():
+                # Perfil e caderno em cópia temporária: a avaliação não pode
+                # gravar no perfil de verdade do seu carro.
+                import shutil
+                import tempfile
+
+                from engenheiro.caderno import Caderno
+                from engenheiro.perfil import Perfil
+
+                tmp = Path(tempfile.mkdtemp(prefix="hefesto-aval-"))
+                shutil.copy(cfg.caminho(cfg.perfil_veiculo), tmp / "perfil.yaml")
+                return Conversador(eng, Perfil(tmp / "perfil.yaml"), Caderno(tmp / "caderno"), pasta, Sessao.nova())
+
+            res = avaliacao.avaliar_cenarios(criar, lista)
+        elif modo == "completo":
+            res = avaliacao.avaliar_completo(eng, lista, rastros, cfg.busca.final)
+        else:
+            res = avaliacao.avaliar_respostas(eng, lista, rastros, conversa=(modo == "conversa"))
     extra = {"indice": str(indice or cfg.caminho(cfg.caminhos.indice)), "embedder": rec.embedder.nome if rec.embedder else None,
              "reranker": rec.reranker.nome if rec.reranker else None}
-    j, m = avaliacao.gravar_relatorio(saida, perguntas, modo, res, avaliacao.resumo_config(cfg, extra))
-    for k, v in res["metricas"].items():
-        con.print(f"  {k:42} {v}")
+    j, m = avaliacao.gravar_relatorio(saida, arquivo, modo, res, avaliacao.resumo_config(cfg, extra))
+    for k_, v in res["metricas"].items():
+        con.print(f"  {k_:42} {v}")
     con.print(f"\nRelatório: {m}\nJSON: {j}")
+    import json as _json
 
+    comp = _json.loads(j.read_text(encoding="utf-8")).get("comparacao") or {}
+    if comp.get("pioraram"):
+        con.print(f"[red]Pioraram desde {comp['execucao_anterior']}: {', '.join(comp['pioraram'])}[/]")
+        if falhar_se_piorar:
+            raise typer.Exit(1)
 
 @app.command()
 def perguntar(
