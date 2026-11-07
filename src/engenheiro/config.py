@@ -117,7 +117,7 @@ class Ativacao(BaseModel):
     # "transcricao": transcreve trechos de fala e procura a palavra no começo
     #   (funciona já, sem treinar nada; gasta mais CPU).
     # "openwakeword": detector dedicado (leve). Precisa de um modelo da
-    #   palavra; para "Hefesto" ele tem que ser treinado (ver README).
+    #   palavra; para "Hefesto" ele tem que ser treinado (ver docs/MANUAL.md, voz).
     # "botao": só botão de falar (Enter no terminal).
     modo: str = "transcricao"
     palavra: str = "Hefesto"

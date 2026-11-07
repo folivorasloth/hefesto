@@ -81,8 +81,9 @@ geracao:
   # ele passa do limite. 12k cabe ~8 trechos + instruções. Mais contexto = mais RAM.
   num_ctx: 12288
   temperatura: 0.0
-  # Omitido = padrão do modelo. Para qwen3, false deixa bem mais rápido.
-  # pensar: false
+  # null = padrão do modelo. Para qwen3: false deixa bem mais rápido;
+  # true pode raciocinar melhor. Compare os dois com `engenheiro avaliar`.
+  pensar: null
   max_trechos_contexto: 8
 
 verificador:
@@ -120,7 +121,7 @@ voz:
   ativacao:
     modo: transcricao          # transcricao | openwakeword | botao
     palavra: Hefesto
-    modelo_openwakeword: ""    # modelo treinado para "Hefesto" (ver README)
+    modelo_openwakeword: ""    # modelo treinado para "Hefesto" (ver docs/MANUAL.md, seção de voz)
     limiar_openwakeword: 0.5
     modelo_whisper_ativacao: tiny
 

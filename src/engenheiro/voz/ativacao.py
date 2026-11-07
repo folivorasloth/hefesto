@@ -7,7 +7,7 @@ Três modos (config voz.ativacao.modo):
   nada, e permite dizer tudo de uma vez ("Hefesto, onde fica a bobina?").
   Custo: CPU contínua enquanto alguém fala perto do microfone.
 - "openwakeword": detector dedicado, bem mais leve. Precisa de um modelo da
-  palavra "Hefesto" (o pacote só traz palavras em inglês); o README explica
+  palavra "Hefesto" (o pacote só traz palavras em inglês); docs/MANUAL.md (voz) explica
   como treinar.
 - "botao": aperte Enter e fale. Na garagem barulhenta é o mais confiável; na
   fase 6 o botão pode ser físico, no ESP32, via MQTT.

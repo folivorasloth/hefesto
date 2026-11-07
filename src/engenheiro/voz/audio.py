@@ -37,6 +37,9 @@ class MicrofoneSD:
     """Microfone real via sounddevice (PortAudio)."""
 
     def __init__(self, dispositivo: int | str | None = None) -> None:
+        from engenheiro.dependencias import exigir
+
+        exigir("sounddevice", "voz", "O microfone")
         import sounddevice as sd
 
         self._fila: queue.Queue[bytes] = queue.Queue(maxsize=500)

@@ -77,7 +77,7 @@ def criar_app(servico: Servico, token: str = "") -> FastAPI:
         try:
             return mod_rastro.carregar(cfg.caminho(cfg.caminhos.rastros), id_rastro)
         except (FileNotFoundError, ValueError):
-            raise HTTPException(404, f"rastro {id_rastro} não encontrado")
+            raise HTTPException(404, f"rastro {id_rastro} não encontrado") from None
 
     @app.post("/caderno", dependencies=protegido)
     def anotar(n: Nota) -> dict:

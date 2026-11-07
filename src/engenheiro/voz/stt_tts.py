@@ -17,6 +17,9 @@ VOCABULARIO = ("Hefesto, Gol, AP, carburador, Weber, giclê, afogador, distribui
 class Transcritor:
     def __init__(self, modelo: str = "small", dispositivo: str = "cpu", compute_type: str = "int8",
                  vocabulario: str = VOCABULARIO) -> None:
+        from engenheiro.dependencias import exigir
+
+        exigir("faster_whisper", "voz", "A transcrição de voz")
         from faster_whisper import WhisperModel
 
         self.modelo = WhisperModel(modelo, device=dispositivo, compute_type=compute_type)
@@ -37,6 +40,9 @@ class Transcritor:
 
 class Sintetizador:
     def __init__(self, caminho_voz: Path, velocidade: float = 1.0) -> None:
+        from engenheiro.dependencias import exigir
+
+        exigir("piper", "voz", "A fala do Hefesto")
         from piper import PiperVoice
         from piper.config import SynthesisConfig
 

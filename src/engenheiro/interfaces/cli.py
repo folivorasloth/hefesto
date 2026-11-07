@@ -364,7 +364,7 @@ def inventario(
         dados = inv.carregar(arquivo)
     except inv.InventarioInvalido as e:
         con.print(Text(str(e), style="red"))
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     if validar:
         con.print(f"[green]Inventário válido:[/] {len(dados.itens)} itens.")
         return
@@ -463,7 +463,7 @@ def perfil_definir(
         novo = fabrica.perfil(carregar_config(config)).definir(campo, v, status, fonte, observacao)
     except PerfilInvalido as e:
         con.print(Text(str(e), style="red"))
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     con.print(Text(f"{campo} = {novo}"))
 
 
@@ -551,6 +551,13 @@ def conversar(
 
 
 # ---------------------------------------------------------------- voz
+def _exigir_voz() -> None:
+    from engenheiro.dependencias import exigir
+
+    for modulo in ("numpy", "scipy", "faster_whisper", "piper", "sounddevice", "webrtcvad"):
+        exigir(modulo, "voz", "A voz")
+
+
 @app.command()
 def voz(
     botao: bool = typer.Option(False, "--botao", help="Ativação só pelo Enter (botão de falar)"),
@@ -561,6 +568,7 @@ def voz(
     indice: Optional[Path] = OpcIndice,
 ):
     """Conversa por voz: diga "Hefesto, ..." (ou aperte Enter com --botao)."""
+    _exigir_voz()
     cfg = carregar_config(config)
     if sem_mumbling:
         cfg.voz.mumbling = False
@@ -593,6 +601,7 @@ app.add_typer(voz_app, name="audio")
 def audio_falar(texto: str = typer.Argument("Olá, eu sou o Hefesto. A tensão medida foi de 12,6 V."),
                 config: Optional[Path] = OpcConfig):
     """Testa o alto-falante e a voz."""
+    _exigir_voz()
     from engenheiro.voz.audio import AltoFalanteSD
     from engenheiro.voz.stt_tts import Sintetizador
 
@@ -605,6 +614,7 @@ def audio_falar(texto: str = typer.Argument("Olá, eu sou o Hefesto. A tensão m
 @voz_app.command("ouvir")
 def audio_ouvir(config: Optional[Path] = OpcConfig):
     """Testa o microfone: fale uma frase e veja a transcrição."""
+    _exigir_voz()
     from engenheiro.voz.ativacao import detectar_palavra
     from engenheiro.voz.audio import MicrofoneSD
     from engenheiro.voz.stt_tts import Transcritor
@@ -649,6 +659,10 @@ def servir(
         con.print("[dim]MQTT desligado (mqtt.host vazio no config).[/]")
     try:
         if api:
+            from engenheiro.dependencias import exigir
+
+            exigir("fastapi", "servico", "A API HTTP")
+            exigir("uvicorn", "servico", "A API HTTP")
             import uvicorn
 
             from engenheiro.interfaces.api import criar_app
@@ -684,5 +698,16 @@ def corpus_teste(destino: Path = typer.Option(Path("data/teste"), help="Pasta de
     )
 
 
+def principal() -> None:
+    """Ponto de entrada: mostra DependenciaFaltando como mensagem, sem traceback."""
+    from engenheiro.dependencias import DependenciaFaltando
+
+    try:
+        app()
+    except DependenciaFaltando as e:
+        con.print(f"[red]{escape(str(e))}[/]")
+        raise SystemExit(3) from None
+
+
 if __name__ == "__main__":
-    app()
+    principal()

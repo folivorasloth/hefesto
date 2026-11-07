@@ -72,6 +72,9 @@ class ExtratorPDF:
 
     def _obter_conversor(self):
         if self._conversor is None:
+            from engenheiro.dependencias import exigir
+
+            exigir("docling", "ingestao", "A leitura de PDFs")
             from docling.datamodel.base_models import InputFormat
             from docling.datamodel.pipeline_options import (
                 HeadingHierarchyOptions,

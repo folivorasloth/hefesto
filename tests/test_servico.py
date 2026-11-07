@@ -23,7 +23,7 @@ RAIZ = Path(__file__).parents[1]
 
 
 @pytest.fixture
-def servico(conversa, tmp_path):
+def servico(conversa, tmp_path):  # noqa: F811 - fixture importada de test_conversa
     cfg, perfil, criar = conversa
 
     def montar(llm):

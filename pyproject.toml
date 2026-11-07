@@ -28,7 +28,7 @@ servico = ["fastapi>=0.110", "uvicorn>=0.29", "paho-mqtt>=2.0"]
 voz = ["faster-whisper>=1.0", "piper-tts>=1.3", "sounddevice>=0.4", "webrtcvad-wheels>=2.0", "openwakeword>=0.4", "numpy", "scipy"]
 
 [project.scripts]
-engenheiro = "engenheiro.interfaces.cli:app"
+engenheiro = "engenheiro.interfaces.cli:principal"
 
 [tool.setuptools.packages.find]
 where = ["src"]

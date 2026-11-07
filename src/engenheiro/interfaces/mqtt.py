@@ -56,6 +56,9 @@ def interpretar_entrada(payload: bytes | str) -> dict:
 class ClienteMqtt:
     def __init__(self, servico: Servico, host: str, porta: int = 1883, usuario: str = "", senha: str | None = None,
                  qos: int = 1, topicos: dict | None = None, id_personagem: str = "engenheiro") -> None:
+        from engenheiro.dependencias import exigir
+
+        exigir("paho.mqtt", "servico", "O MQTT")
         import paho.mqtt.client as mqtt
 
         self.servico = servico
