@@ -84,3 +84,18 @@ geracao:
 
 verificador:
   ativo: true   # desligar só para depurar; a resposta avisa que não foi verificada
+
+ferramentas:
+  ativo: true
+  max_rodadas: 4      # rodadas de chamadas de ferramenta antes de responder
+
+web:
+  # Seu SearXNG (docker/searxng/). Vazio = sem busca web.
+  searxng_url: ""
+  # pedido: só quando você pede (web, internet, pesquise online...)
+  # sem_fontes: também quando a base não tem nada relevante
+  # nunca: desligada
+  modo: pedido
+  maximo_resultados: 5
+
+perfil_veiculo: perfil_veiculo.yaml

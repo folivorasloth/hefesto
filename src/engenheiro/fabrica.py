@@ -56,9 +56,34 @@ def recuperador(cfg: Config, bco: Banco, emb, bus: Barramento, com_reranker: boo
     return Recuperador(cfg, bco, glossario, emb, rr, bus)
 
 
+def perfil(cfg: Config):
+    from engenheiro.perfil import Perfil
+
+    return Perfil(cfg.caminho(cfg.perfil_veiculo))
+
+
+def caderno(cfg: Config, bco: Banco | None = None, emb=None, bus: Barramento | None = None):
+    """Caderno de bordo. Com `bco`, cada anotação nova é indexada na hora
+    (só a coleção do caderno; o resto da biblioteca não é tocado)."""
+    from engenheiro.caderno import COLECAO, Caderno
+
+    pasta = cfg.caminho(cfg.caminhos.biblioteca) / COLECAO
+    ao_gravar = None
+    if bco is not None:
+        ao_gravar = lambda: indexador(cfg, bco, emb, bus or Barramento()).indexar(colecoes=[COLECAO])  # noqa: E731
+    return Caderno(pasta, ao_gravar)
+
+
+def registro_ferramentas(cfg: Config, bus: Barramento, cad=None, prf=None):
+    from engenheiro.ferramentas import criar_registro
+
+    return criar_registro(cfg.raiz, bus, cad, prf)
+
+
 def engenheiro(cfg: Config, bco: Banco, bus: Barramento, embedder_falso: bool = False, com_reranker: bool | None = None):
     """Monta o assistente completo. Se o Ollama não responder agora, o LLM fica
     None e o assistente opera no modo "sem modelo" (não improvisa respostas)."""
+    from engenheiro import web
     from engenheiro.assistente import Engenheiro
     from engenheiro.persona import Persona
     from engenheiro.seguranca import Seguranca
@@ -69,4 +94,10 @@ def engenheiro(cfg: Config, bco: Banco, bus: Barramento, embedder_falso: bool = 
     rec = recuperador(cfg, bco, emb, bus, com_reranker)
     persona = Persona.carregar(cfg.caminho(cfg.assistente.persona))
     seg = Seguranca.carregar(cfg.dados_ref / "seguranca.yaml")
-    return Engenheiro(cfg, rec, llm, persona, seg, bus)
+    prf = perfil(cfg)
+    cad = caderno(cfg, bco, emb, bus)
+    reg = registro_ferramentas(cfg, bus, cad, prf)
+    busca_web = None
+    if cfg.web.searxng_url:
+        busca_web = lambda q: web.buscar(cfg.web.searxng_url, q, cfg.web.maximo_resultados)  # noqa: E731
+    return Engenheiro(cfg, rec, llm, persona, seg, bus, prf.para_prompt(), reg, busca_web, prf.valores_confirmados())

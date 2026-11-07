@@ -1,0 +1,92 @@
+# Tabela de pinos do ESP32 clássico, para a placa DevKit de 38 pinos do
+# inventário (esp32-devkit-38p). Lida pela ferramenta `verificar_pinos`.
+#
+# STATUS: as restrições abaixo são as conhecidas do ESP32 clássico, mas ainda
+# NÃO foram conferidas linha a linha contra o datasheet indexado na base.
+# Quando o "ESP32 Series Datasheet" da Espressif estiver em
+# data/biblioteca/esp32/, confira cada `fonte` e mude `status` para
+# "confirmado". Até lá, a ferramenta devolve o status junto com cada alerta,
+# e o verificador trata isso como tal.
+
+placa: esp32-devkit-38p
+chip: "ESP32 (clássico, ESP32-D0WD) - provável, ver inventário"
+status: conferir_com_datasheet
+
+restricoes:
+  flash:
+    gravidade: proibido
+    texto: "Ligado à memória flash SPI do módulo. Usar este pino trava ou corrompe a placa."
+    fonte: "ESP32 Series Datasheet (Espressif), tabela de pinos: GPIO6-11 = SPI flash (SD_CLK, SD_DATA0-3, SD_CMD)"
+    status: conferir_com_datasheet
+  so_entrada:
+    gravidade: erro_se_saida
+    texto: "Pino só de entrada: não funciona como saída."
+    fonte: "ESP32 Series Datasheet, tabela de pinos: GPIO34-39 são input-only"
+    status: conferir_com_datasheet
+  sem_pull_interno:
+    gravidade: alerta_se_entrada_digital
+    texto: "Não tem resistor de pull-up/pull-down interno: uma entrada digital (botão, sinal em coletor aberto) precisa de resistor externo."
+    fonte: "ESP32 Series Datasheet, tabela de pinos (GPIO34-39 sem pull-up/pull-down)"
+    status: conferir_com_datasheet
+  strapping:
+    gravidade: alerta
+    texto: "Pino de strapping: o nível dele no momento em que a placa liga define o modo de boot. Um circuito que puxe este pino para o nível errado impede a placa de ligar ou de gravar."
+    fonte: "ESP32 Series Datasheet, seção Strapping Pins (GPIO0, GPIO2, GPIO5, GPIO12/MTDI, GPIO15/MTDO)"
+    status: conferir_com_datasheet
+  adc2_wifi:
+    gravidade: alerta_se_analogico
+    texto: "Canal do ADC2: não funciona enquanto o Wi-Fi está ligado. Para telemetria por Wi-Fi, use um pino do ADC1 (GPIO32-39)."
+    fonte: "ESP-IDF Programming Guide, ADC: ADC2 é usado pelo driver de Wi-Fi"
+    status: conferir_com_datasheet
+  uart0:
+    gravidade: alerta
+    texto: "Ligado ao conversor USB-serial (gravação e monitor serial). Usar atrapalha a gravação e as mensagens de depuração."
+    fonte: "Esquemático das placas DevKitC: U0TXD=GPIO1, U0RXD=GPIO3 ligados ao conversor USB-UART"
+    status: conferir_com_datasheet
+  sinal_no_boot:
+    gravidade: alerta_se_saida
+    texto: "Este pino pode emitir sinal (nível alto ou PWM) durante o boot: não ligue nele um relé, buzzer ou atuador que não possa acionar sozinho por um instante."
+    fonte: "Observação da comunidade (tabelas de referência de pinos ESP32); não é tabela do datasheet"
+    status: provavel
+  psram_wrover:
+    gravidade: info
+    texto: "Em módulos WROVER (com PSRAM), este pino é usado pela PSRAM. Na sua placa (formato WROOM, provável sem PSRAM) deve estar livre: confirme a PSRAM antes de usar."
+    fonte: "ESP32-WROVER Datasheet: GPIO16/17 ligados à PSRAM"
+    status: conferir_com_datasheet
+
+# serigrafia = como está escrito na sua placa. adc = canal ADC. Pinos que não
+# aparecem aqui (20, 24, 28-31, 37, 38) não existem/não estão expostos.
+pinos:
+  - {gpio: 0,  serigrafia: G0,   adc: ADC2_CH1, toque: T1, restricoes: [strapping, adc2_wifi]}
+  - {gpio: 1,  serigrafia: TXD,  restricoes: [uart0, sinal_no_boot]}
+  - {gpio: 2,  serigrafia: G2,   adc: ADC2_CH2, toque: T2, restricoes: [strapping, adc2_wifi]}
+  - {gpio: 3,  serigrafia: RXD,  restricoes: [uart0, sinal_no_boot]}
+  - {gpio: 4,  serigrafia: G4,   adc: ADC2_CH0, toque: T0, restricoes: [adc2_wifi]}
+  - {gpio: 5,  serigrafia: G5,   restricoes: [strapping, sinal_no_boot], padrao: "VSPI CS (Arduino)"}
+  - {gpio: 6,  serigrafia: CLK,  restricoes: [flash]}
+  - {gpio: 7,  serigrafia: SD0,  restricoes: [flash]}
+  - {gpio: 8,  serigrafia: SD1,  restricoes: [flash]}
+  - {gpio: 9,  serigrafia: SD2,  restricoes: [flash]}
+  - {gpio: 10, serigrafia: SD3,  restricoes: [flash]}
+  - {gpio: 11, serigrafia: CMD,  restricoes: [flash]}
+  - {gpio: 12, serigrafia: G12,  adc: ADC2_CH5, toque: T5, restricoes: [strapping, adc2_wifi],
+     detalhe: "MTDI: nível ALTO no boot muda a tensão da flash e a placa pode não ligar. Não use com pull-up externo."}
+  - {gpio: 13, serigrafia: G13,  adc: ADC2_CH4, toque: T4, restricoes: [adc2_wifi]}
+  - {gpio: 14, serigrafia: G14,  adc: ADC2_CH6, toque: T6, restricoes: [adc2_wifi, sinal_no_boot]}
+  - {gpio: 15, serigrafia: G15,  adc: ADC2_CH3, toque: T3, restricoes: [strapping, adc2_wifi, sinal_no_boot]}
+  - {gpio: 16, serigrafia: G16,  restricoes: [psram_wrover]}
+  - {gpio: 17, serigrafia: G17,  restricoes: [psram_wrover]}
+  - {gpio: 18, serigrafia: G18,  restricoes: [], padrao: "VSPI SCK (Arduino)"}
+  - {gpio: 19, serigrafia: G19,  restricoes: [], padrao: "VSPI MISO (Arduino)"}
+  - {gpio: 21, serigrafia: G21,  restricoes: [], padrao: "I2C SDA (Arduino)"}
+  - {gpio: 22, serigrafia: G22,  restricoes: [], padrao: "I2C SCL (Arduino)"}
+  - {gpio: 23, serigrafia: G23,  restricoes: [], padrao: "VSPI MOSI (Arduino)"}
+  - {gpio: 25, serigrafia: G25,  adc: ADC2_CH8, dac: DAC1, restricoes: [adc2_wifi]}
+  - {gpio: 26, serigrafia: G26,  adc: ADC2_CH9, dac: DAC2, restricoes: [adc2_wifi]}
+  - {gpio: 27, serigrafia: G27,  adc: ADC2_CH7, toque: T7, restricoes: [adc2_wifi]}
+  - {gpio: 32, serigrafia: G32,  adc: ADC1_CH4, toque: T9, restricoes: []}
+  - {gpio: 33, serigrafia: G33,  adc: ADC1_CH5, toque: T8, restricoes: []}
+  - {gpio: 34, serigrafia: G34,  adc: ADC1_CH6, restricoes: [so_entrada, sem_pull_interno]}
+  - {gpio: 35, serigrafia: G35,  adc: ADC1_CH7, restricoes: [so_entrada, sem_pull_interno]}
+  - {gpio: 36, serigrafia: SP,   adc: ADC1_CH0, restricoes: [so_entrada, sem_pull_interno], nome_alternativo: SENSOR_VP}
+  - {gpio: 39, serigrafia: SN,   adc: ADC1_CH3, restricoes: [so_entrada, sem_pull_interno], nome_alternativo: SENSOR_VN}

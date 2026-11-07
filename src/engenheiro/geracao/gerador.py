@@ -31,6 +31,16 @@ class TrechoContexto:
     def citacao(self) -> str:
         return citacao_de_trecho(self.trecho)
 
+    # Interface comum a todo item de contexto (trecho, ferramenta F#, web W#):
+    # id, citacao, texto, origens, para_prompt().
+    @property
+    def texto(self) -> str:
+        return self.trecho.texto
+
+    @property
+    def origens(self) -> list[str]:
+        return self.trecho.origens
+
     def para_prompt(self) -> str:
         t = self.trecho
         marcas = []
@@ -65,7 +75,7 @@ class RespostaGerada:
     afirmacoes: list[Afirmacao]
     falta: str
     sugestoes: list[str]
-    contexto: list[TrechoContexto]
+    contexto: list                   # TrechoContexto + Chamada (F#) + ResultadoWeb (W#)
     mensagens: list[dict]            # o prompt exato, para o rastro
     bruto: str                       # a saída exata do modelo, para o rastro
     modelo: str
@@ -93,7 +103,15 @@ def montar_contexto(candidatos: list[Candidato], num_ctx: int, tamanho_fixo: int
     return escolhidos, avisos
 
 
-def _mensagens(persona_txt: str, perfil_txt: str, pergunta: str, contexto: list[TrechoContexto]) -> list[dict]:
+def mensagens_base(persona_txt: str, perfil_txt: str, pergunta: str, contexto: list[TrechoContexto]) -> list[dict]:
+    """Prefixo COMUM às duas chamadas ao modelo forte (ferramentas e resposta).
+
+    As duas começam com exatamente o mesmo texto (regras, perfil, trechos e
+    pergunta); só a instrução final muda. Assim o Ollama pode reaproveitar o
+    processamento do prompt da primeira chamada (cache do prefixo), que em
+    CPU é a parte mais lenta. Confira no rastro: prompt_eval_count da 2ª
+    chamada deve ser bem menor que o tamanho total do prompt.
+    """
     sistema = "\n\n".join(p for p in [persona_txt, perfil_txt, prompts.REGRAS_RESPOSTA] if p)
     if contexto:
         corpo = "TRECHOS RECUPERADOS DA BASE:\n\n" + "\n\n".join(t.para_prompt() for t in contexto)
@@ -105,28 +123,53 @@ def _mensagens(persona_txt: str, perfil_txt: str, pergunta: str, contexto: list[
     ]
 
 
+def _mensagens_resposta(base: list[dict], extras: list) -> list[dict]:
+    ferr = [e for e in extras if e.id.startswith("F")]
+    web = [e for e in extras if e.id.startswith("W")]
+    partes = [base[1]["content"]]
+    if ferr:
+        partes.append("RESULTADOS DE FERRAMENTAS (contas feitas pelo sistema; cite pelo id F#):\n\n"
+                      + "\n\n".join(e.para_prompt() for e in ferr))
+    if web:
+        partes.append("RESULTADOS DA WEB (NÃO VERIFICADOS; cite pelo id W# e use tipo \"web\"):\n\n"
+                      + "\n\n".join(e.para_prompt() for e in web))
+    partes.append(prompts.INSTRUCAO_RESPOSTA)
+    return [base[0], {"role": "user", "content": "\n\n".join(partes)}]
+
+
 def gerar(
     llm: LLM,
     modelo: str,
     pergunta: str,
-    candidatos: list[Candidato],
-    persona_txt: str,
+    candidatos: list[Candidato] | None = None,
+    persona_txt: str = "",
     perfil_txt: str = "",
     num_ctx: int = 12288,
     temperatura: float = 0.0,
     pensar: bool | None = None,
     max_trechos: int = 8,
+    contexto: list[TrechoContexto] | None = None,
+    extras: list | None = None,
 ) -> RespostaGerada:
-    fixo = len(_mensagens(persona_txt, perfil_txt, pergunta, [])[0]["content"]) + len(pergunta) + 200
-    contexto, avisos = montar_contexto(candidatos, num_ctx, fixo, max_trechos)
-    mensagens = _mensagens(persona_txt, perfil_txt, pergunta, contexto)
+    """`contexto` já montado (quando a etapa de ferramentas rodou antes) ou
+    `candidatos` para montar aqui. `extras`: chamadas de ferramenta (F#) e
+    resultados web (W#)."""
+    avisos: list[str] = []
+    if contexto is None:
+        fixo = len(mensagens_base(persona_txt, perfil_txt, pergunta, [])[0]["content"]) + len(pergunta) + 200
+        contexto, avisos = montar_contexto(candidatos or [], num_ctx, fixo, max_trechos)
+    extras = list(extras or [])
+    mensagens = _mensagens_resposta(mensagens_base(persona_txt, perfil_txt, pergunta, contexto), extras)
     r = llm.chat(modelo, mensagens, formato=esquemas.RESPOSTA,
                  opcoes={"temperature": temperatura, "num_ctx": num_ctx}, pensar=pensar)
 
     prompt_tokens = (r.get("metricas") or {}).get("prompt_eval_count")
+    total_chars = sum(len(m["content"]) for m in mensagens)
     if prompt_tokens and prompt_tokens >= num_ctx - 8:
         # Sinal de que o Ollama cortou o começo do prompt (onde estão as regras!).
         avisos.append(f"O prompt pode ter sido truncado ({prompt_tokens} tokens para num_ctx={num_ctx}).")
+    elif total_chars / _CARACTERES_POR_TOKEN > num_ctx:
+        avisos.append(f"O prompt (~{int(total_chars / _CARACTERES_POR_TOKEN)} tokens estimados) pode passar de num_ctx={num_ctx}.")
 
     try:
         d = json.loads(r["conteudo"])
@@ -135,7 +178,7 @@ def gerar(
 
     afirmacoes = []
     for i, a in enumerate(d.get("afirmacoes") or [], start=1):
-        tipo = a.get("tipo") if a.get("tipo") in ("fonte", "inferencia") else "inferencia"
+        tipo = a.get("tipo") if a.get("tipo") in ("fonte", "inferencia", "web") else "inferencia"
         afirmacoes.append(
             Afirmacao(
                 id=f"A{i}",
@@ -151,7 +194,7 @@ def gerar(
         afirmacoes=[a for a in afirmacoes if a.texto],
         falta=str(d.get("falta") or "").strip(),
         sugestoes=[str(s).strip() for s in d.get("sugestoes") or [] if str(s).strip()],
-        contexto=contexto,
+        contexto=list(contexto) + extras,
         mensagens=mensagens,
         bruto=r["conteudo"],
         modelo=modelo,

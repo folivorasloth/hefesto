@@ -15,6 +15,7 @@ dependencies = [
     "rich>=13",
     "sqlite-vec>=0.1.6",
     "lingua-language-detector>=2.0",
+    "pint>=0.24",
 ]
 
 [project.optional-dependencies]

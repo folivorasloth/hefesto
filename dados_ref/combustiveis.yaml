@@ -1,0 +1,32 @@
+# Relação ar/combustível estequiométrica por combustível.
+#
+# DE PROPÓSITO, sem valores: o número certo depende do combustível exato.
+# O etanol hidratado vendido no posto (EHC) tem água na composição, e a
+# gasolina brasileira tem etanol anidro misturado. Os valores "de livro"
+# (quase sempre para etanol puro ou gasolina sem etanol) não valem direto.
+#
+# Preencha `valor` E `fonte` a partir de um livro ou norma da base, e mude o
+# status para "confirmado". Enquanto estiver null, a ferramenta lambda_afr se
+# recusa a calcular sem que você informe o valor na pergunta, com fonte.
+
+combustiveis:
+  etanol_hidratado:
+    descricao: "Etanol hidratado combustível (EHC), o 'álcool' da bomba"
+    afr_estequiometrico: null
+    status: a_confirmar
+    fonte: null
+  etanol_anidro:
+    descricao: "Etanol anidro (sem água), o que vai misturado na gasolina"
+    afr_estequiometrico: null
+    status: a_confirmar
+    fonte: null
+  gasolina_c:
+    descricao: "Gasolina comum brasileira (com etanol anidro misturado; o teor muda por lei)"
+    afr_estequiometrico: null
+    status: a_confirmar
+    fonte: null
+  gasolina_pura:
+    descricao: "Gasolina sem etanol (referência de livros estrangeiros)"
+    afr_estequiometrico: null
+    status: a_confirmar
+    fonte: null

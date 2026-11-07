@@ -105,6 +105,22 @@ class Verificador(BaseModel):
     ativo: bool = True
 
 
+class Ferramentas(BaseModel):
+    ativo: bool = True
+    # Rodadas de chamada de ferramenta antes da resposta (cada rodada é uma
+    # chamada ao modelo forte; em CPU, cada uma custa tempo).
+    max_rodadas: int = 4
+
+
+class Web(BaseModel):
+    # URL do seu SearXNG (ver docker/searxng/). Vazio = busca web desligada.
+    searxng_url: str = ""
+    # "pedido": só quando a pergunta pede (web, internet, pesquise online...);
+    # "sem_fontes": também quando a base não tem nada relevante; "nunca".
+    modo: str = "pedido"
+    maximo_resultados: int = 5
+
+
 COLECOES_PADRAO = [
     "veiculo",
     "carburacao_etanol",
@@ -129,6 +145,9 @@ class Config(BaseModel):
     busca: Busca = Field(default_factory=Busca)
     geracao: Geracao = Field(default_factory=Geracao)
     verificador: Verificador = Field(default_factory=Verificador)
+    ferramentas: Ferramentas = Field(default_factory=Ferramentas)
+    web: Web = Field(default_factory=Web)
+    perfil_veiculo: Path = Path("perfil_veiculo.yaml")
 
     # Pasta raiz do projeto (onde fica o config.yaml e dados_ref/).
     raiz: Path = Path(".")

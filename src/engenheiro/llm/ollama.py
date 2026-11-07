@@ -36,6 +36,7 @@ class LLM(Protocol):
         formato: dict | None = None,
         opcoes: dict | None = None,
         pensar: bool | None = None,
+        ferramentas: list[dict] | None = None,
     ) -> RespostaLLM: ...
 
 
@@ -85,8 +86,12 @@ class ClienteOllama:
         formato: dict | None = None,
         opcoes: dict | None = None,
         pensar: bool | None = None,
+        ferramentas: list[dict] | None = None,
     ) -> RespostaLLM:
         """Chama /api/chat sem streaming.
+
+        `ferramentas`: esquemas no formato do Ollama (tool calling). As chamadas
+        pedidas pelo modelo voltam em resposta["chamadas"]: [{"nome", "argumentos"}].
 
         `formato` é um JSON Schema: o Ollama restringe a geração para que a
         saída siga o esquema (structured outputs). Isso elimina a classe de
@@ -98,9 +103,16 @@ class ClienteOllama:
             corpo["format"] = formato
         if pensar is not None:
             corpo["think"] = pensar
+        if ferramentas:
+            corpo["tools"] = ferramentas
         d = self._post("/api/chat", corpo)
         metricas = {k: d.get(k) for k in ("total_duration", "prompt_eval_count", "eval_count", "done_reason")}
-        return RespostaLLM(conteudo=d["message"]["content"], modelo=modelo, metricas=metricas)
+        chamadas = [
+            {"nome": c["function"]["name"], "argumentos": c["function"].get("arguments") or {}}
+            for c in d["message"].get("tool_calls") or []
+        ]
+        return RespostaLLM(conteudo=d["message"].get("content", ""), modelo=modelo, metricas=metricas,
+                           chamadas=chamadas, mensagem=d["message"])
 
     def descrever_imagem(self, modelo: str, imagem, prompt: str) -> str:
         buf = io.BytesIO()

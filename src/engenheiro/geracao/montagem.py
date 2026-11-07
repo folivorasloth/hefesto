@@ -8,7 +8,7 @@ Layout (texto simples, legível no terminal e no MQTT; a voz lê só o miolo):
     ⚠ VERIFICAÇÃO               (só se houver problema crítico: vem PRIMEIRO)
     Das fontes:                 afirmações confirmadas, com citação
     Inferência (minha):         raciocínios, marcados como tais
-    Web (não verificado):       fase 3 (SearXNG)
+    Web (não verificado):       resultados do SearXNG, com link
     Não encontrei nas fontes:   o que falta + sugestões
     Segurança:                  avisos determinísticos
     Removidas pelo verificador: o que foi cortado e por quê
@@ -29,7 +29,7 @@ def _citacoes(a: Afirmacao, r: RespostaGerada) -> str:
 
 def _avisos_origem(a: Afirmacao, r: RespostaGerada) -> list[str]:
     por_id = {t.id: t for t in r.contexto}
-    origens = {o for t in a.trechos if t in por_id for o in por_id[t].trecho.origens}
+    origens = {o for t in a.trechos if t in por_id for o in por_id[t].origens}
     saida = []
     if "ocr" in origens:
         saida.append("trecho lido por OCR: confira no original")
@@ -38,11 +38,18 @@ def _avisos_origem(a: Afirmacao, r: RespostaGerada) -> list[str]:
     return saida
 
 
+def _links(a: Afirmacao, r: RespostaGerada) -> list[str]:
+    por_id = {t.id: t for t in r.contexto}
+    return list(dict.fromkeys(por_id[t].url for t in a.trechos if t in por_id and hasattr(por_id[t], "url")))
+
+
 def _linha(a: Afirmacao, r: RespostaGerada) -> str:
     cit = _citacoes(a, r)
     partes = [a.texto]
     if cit:
-        partes.append(cit if a.tipo == "fonte" else f"(a partir de {cit})")
+        partes.append(cit if a.tipo in ("fonte", "web") else f"(a partir de {cit})")
+    if a.tipo == "web":
+        partes += _links(a, r)
     notas = list(a.notas) + _avisos_origem(a, r)
     if a.numeros_suspeitos:
         notas = [n for n in notas if not n.startswith("número sem origem")]
@@ -70,12 +77,18 @@ def montar_texto(
         vivas = [a for a in r.afirmacoes if a.status != "removida"]
         fontes = [a for a in vivas if a.tipo == "fonte"]
         infer = [a for a in vivas if a.tipo == "inferencia"]
+        web = [a for a in vivas if a.tipo == "web"]
         if fontes:
             blocos.append("Das fontes:\n" + "\n".join(_linha(a, r) for a in fontes))
         if infer:
             blocos.append(
                 "Inferência (raciocínio meu a partir das fontes; não está escrito nelas):\n"
                 + "\n".join(_linha(a, r) for a in infer)
+            )
+        if web:
+            blocos.append(
+                "Web (NÃO verificado: veio de busca na internet; confira o link antes de confiar):\n"
+                + "\n".join(_linha(a, r) for a in web)
             )
         if not r.encontrou or not fontes:
             txt = "Não encontrei isso nas fontes."

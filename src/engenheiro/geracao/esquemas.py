@@ -19,7 +19,7 @@ RESPOSTA = {
                 "type": "object",
                 "properties": {
                     "texto": {"type": "string"},
-                    "tipo": {"type": "string", "enum": ["fonte", "inferencia"]},
+                    "tipo": {"type": "string", "enum": ["fonte", "inferencia", "web"]},
                     "trechos": {"type": "array", "items": {"type": "string"}},
                     "critica": {"type": "boolean"},
                 },

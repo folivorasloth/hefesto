@@ -1,0 +1,18 @@
+# Copie para settings.yml (fora do git) e troque a secret_key.
+use_default_settings: true
+
+server:
+  # Gere uma chave e cole aqui:  openssl rand -hex 32
+  # O SearXNG se recusa a subir com a chave de exemplo.
+  secret_key: "TROQUE-ESTA-CHAVE"
+  # Só você usa, na rede local: sem limitador de requisições.
+  limiter: false
+  image_proxy: false
+
+search:
+  # "json" é obrigatório: é por ele que o engenheiro lê os resultados.
+  formats:
+    - html
+    - json
+  default_lang: "pt-BR"
+  safe_search: 0

@@ -71,7 +71,16 @@ def _validar_citacoes(r: RespostaGerada) -> None:
         if invalidos:
             a.notas.append(f"citação inexistente descartada: {', '.join(invalidos)}")
         a.trechos = [t for t in dict.fromkeys(a.trechos) if t in validos]
-        if a.tipo == "fonte" and not a.trechos:
+        so_web = bool(a.trechos) and all(t.startswith("W") for t in a.trechos)
+        if a.tipo == "fonte" and so_web:
+            # Web nunca é "fonte": vai para a seção não verificada.
+            a.tipo = "web"
+            a.notas.append("veio só da web: reclassificada como não verificada")
+        elif a.tipo == "web" and not any(t.startswith("W") for t in a.trechos):
+            a.tipo = "inferencia"
+            a.status = "rebaixada"
+            a.notas.append("marcada como web sem citar resultado web: rebaixada para inferência")
+        elif a.tipo == "fonte" and not a.trechos:
             a.tipo = "inferencia"
             a.status = "rebaixada"
             a.notas.append("sem citação válida: rebaixada para inferência")
@@ -98,7 +107,7 @@ def verificar(
     modelo: str,
     opcoes: dict | None = None,
     pensar: bool | None = None,
-    saidas_ferramentas: list[str] | None = None,
+    textos_extras: list[str] | None = None,
     ativo: bool = True,
 ) -> Verificacao:
     v = Verificacao(afirmacoes=r.afirmacoes)
@@ -108,7 +117,8 @@ def verificar(
             a.critica = True
 
     # --- passo LLM: só para afirmações que citam algo (as outras não têm o que conferir)
-    alvo = [a for a in r.afirmacoes if a.trechos]
+    # Web fica fora do verificador LLM: já sai marcada como não verificada.
+    alvo = [a for a in r.afirmacoes if a.trechos and a.tipo != "web"]
     vereditos: dict[str, dict] = {}
     if not ativo:
         v.motivo_nao_executada = "verificador desligado no config"
@@ -128,6 +138,13 @@ def verificar(
         v.executada = True  # nada a verificar com LLM
 
     for a in r.afirmacoes:
+        if a.tipo == "web":
+            a.veredito = "web_nao_verificado"
+            if a.critica:
+                v.problemas_criticos.append(
+                    f"Informação crítica vinda SÓ da web (não verificada): \"{a.texto}\". Confira numa fonte confiável antes de usar."
+                )
+            continue
         if not a.trechos:
             a.veredito = "sem_base"
             if a.tipo == "inferencia":
@@ -157,13 +174,16 @@ def verificar(
             a.notas.append(f"a fonte sustenta só em parte: {a.justificativa}")
 
     # --- números (código)
-    por_id = {t.id: t.trecho.texto for t in r.contexto}
+    # Origens aceitas para números: o que a afirmação cita (trecho, ferramenta
+    # ou web), a pergunta e o perfil do veículo. Ferramentas (F#) fazem parte
+    # do contexto, então conta feita por ferramenta passa; conta "de cabeça" não.
+    por_id = {t.id: t.texto for t in r.contexto}
     todos_trechos = list(por_id.values())
-    extras = list(saidas_ferramentas or [])
+    extras = list(textos_extras or [])
     for a in r.afirmacoes:
         if a.status == "removida":
             continue
-        if a.tipo_original == "fonte" and a.trechos:
+        if a.tipo_original in ("fonte", "web") and a.trechos:
             origens = [por_id[t] for t in a.trechos]
         else:
             origens = todos_trechos

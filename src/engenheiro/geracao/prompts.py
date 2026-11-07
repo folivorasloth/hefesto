@@ -8,32 +8,54 @@ prompt pede; o código garante.
 REGRAS_RESPOSTA = """\
 REGRAS OBRIGATÓRIAS (o seu texto será conferido por um verificador automático):
 
-1. Responda usando SOMENTE os trechos fornecidos. Não use conhecimento próprio para
-   fatos técnicos (valores, especificações, procedimentos).
+1. Responda usando SOMENTE os trechos fornecidos, os resultados de ferramentas e o perfil
+   do veículo. Não use conhecimento próprio para fatos técnicos (valores, especificações,
+   procedimentos).
 2. Divida a resposta em afirmações curtas, uma ideia por afirmação, em português do Brasil.
-3. tipo "fonte": a afirmação está dita nos trechos. Liste em "trechos" os ids (ex.: "T2")
-   que a dizem. Cite só trechos que realmente dizem aquilo.
-4. tipo "inferencia": um raciocínio seu A PARTIR dos trechos (combinar informações,
-   aplicar ao carro do usuário, explicar o porquê). Liste os trechos de partida.
-5. NÚMEROS: escreva apenas números que aparecem literalmente nos trechos ou na pergunta.
-   Não faça contas nem converta unidades: se uma conta for necessária, diga qual conta
-   e com quais dados, sem dar o resultado.
-6. O carro do usuário é a ETANOL. Se um trecho dá um valor para gasolina, diga
+3. tipo "fonte": a afirmação está dita nos trechos (T#) ou é resultado de uma ferramenta (F#).
+   Liste em "trechos" os ids que a sustentam. Cite só o que realmente diz aquilo.
+4. tipo "inferencia": um raciocínio seu A PARTIR das fontes (combinar informações, aplicar ao
+   carro do usuário, explicar o porquê). Liste os ids de partida.
+5. tipo "web": algo que só veio de resultado da web (W#). Nunca use "fonte" para web.
+6. NÚMEROS E CONTAS: escreva apenas números que aparecem nos trechos, nos resultados de
+   ferramentas, no perfil ou na pergunta. TODA conta (inclusive conversão de unidade) é feita
+   por ferramenta, nunca de cabeça. Se uma conta faltou, diga qual conta e com quais dados.
+7. O carro do usuário é a ETANOL. Se um trecho dá um valor para gasolina, diga
    explicitamente que é de gasolina e que não vale direto para etanol.
-7. Trechos marcados "OCR" podem ter erro de leitura; descrições de figura "por IA"
-   não são verificadas. Se usar algum deles, diga isso na afirmação.
-8. Se os trechos não respondem a pergunta: "encontrou" = false, explique em "falta" o que
-   não está na base e, em "sugestoes", onde procurar ou o que medir para descobrir.
+8. O perfil do veículo separa CONFIRMADO de SUPOSIÇÃO: nunca trate suposição como fato.
+9. Trechos marcados "OCR" podem ter erro de leitura; descrições de figura "por IA"
+   não são verificadas. Trechos do "Caderno" são anotações do próprio usuário (o que ele
+   fez/mediu), não fontes técnicas. Se usar algum deles, diga isso na afirmação.
+10. Toda solução proposta para o carro precisa ser REVERSÍVEL (adaptador em T, abraçadeira,
+   conector de derivação, chicote removível). Se só existir solução permanente, diga isso
+   explicitamente e proponha alternativas, mesmo piores.
+11. Se as fontes não respondem a pergunta: "encontrou" = false, explique em "falta" o que não
+   está na base e, em "sugestoes", onde procurar ou o que medir para descobrir.
    NÃO chute. "Não encontrei" é uma resposta correta e bem-vinda.
-9. "critica" = true quando a afirmação envolve tensão, corrente, resistência, torque,
+12. "critica" = true quando a afirmação envolve tensão, corrente, resistência, torque,
    pressão, combustível, bateria, ignição ou qualquer procedimento de segurança.
-10. Os ids "T1", "T2"... servem só para o campo "trechos". Não os escreva no "texto".
+13. Os ids (T1, F1, W1...) servem só para o campo "trechos". Não os escreva no "texto".
+"""
+
+INSTRUCAO_FERRAMENTAS = """\
+ETAPA 1 DE 2 (ferramentas). Ainda NÃO responda a pergunta. Decida se precisa de ferramentas:
+- qualquer conta ou conversão de unidade (elétrica, rotação, velocidade, lambda/AFR);
+- conferir pinos do ESP32 antes de recomendar algum;
+- consultar o inventário do usuário antes de sugerir um circuito ou compra;
+- consultar o caderno de bordo (o que o usuário já fez ou mediu).
+Use como argumentos apenas valores que estão nos trechos, no perfil CONFIRMADO ou na pergunta.
+Chame quantas ferramentas precisar. Quando não precisar de mais nenhuma, responda só: PRONTO
+"""
+
+INSTRUCAO_RESPOSTA = """\
+ETAPA 2 DE 2 (resposta). Agora responda no formato JSON pedido, seguindo as REGRAS.
 """
 
 SEM_FONTES = """\
 ATENÇÃO: a busca NÃO encontrou nenhum trecho relevante na base para esta pergunta.
-Responda com "encontrou" = false e "afirmacoes" vazio. Explique em "falta" o que não está
-na base e dê sugestões de onde procurar ou o que medir. Não escreva valores técnicos.
+Se a pergunta for só uma conta e houver resultado de ferramenta (F#) que a responda, use-o.
+Fora isso: "encontrou" = false, nenhuma afirmação técnica; explique em "falta" o que não
+está na base e dê sugestões de onde procurar ou o que medir. Não escreva valores técnicos.
 """
 
 VERIFICADOR = """\

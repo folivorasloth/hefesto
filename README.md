@@ -17,7 +17,7 @@ O identificador técnico é `engenheiro`. Nome, tom e exemplos ficam em
 |---|---|---|
 | 1 | Ingestão (Docling + OCR), corte por seção, índice híbrido (BM25 + vetores), reranker, CLI de busca, avaliação de recuperação | **pronta** |
 | 2 | Respostas com citações + verificador, segurança determinística, persona, rastro completo | **pronta** (validar com o seu Ollama) |
-| 3 | Ferramentas de cálculo, tabela de pinos do ESP32, perfil do veículo, caderno de bordo | — |
+| 3 | Ferramentas de cálculo, tabela de pinos do ESP32, perfil do veículo, caderno de bordo, busca web (SearXNG) | **pronta** (validar com o seu Ollama) |
 | 4 | Avaliação completa (fatos-chave, citações, "não sei") | parcial (modos `recuperacao` e `resposta` já existem) |
 | 5 | Voz e mumbling | — |
 | 6 | API HTTP e MQTT | — |
@@ -149,6 +149,115 @@ conte alguns minutos por resposta. Para o `qwen3`, `geracao.pensar: false` no
 config deixa bem mais rápido; `true` pode raciocinar melhor. Compare os dois
 pela avaliação.
 
+## Ferramentas, perfil, caderno e web (fase 3)
+
+### Toda conta passa por ferramenta
+
+Antes de responder, o modelo forte tem uma etapa só para chamar
+ferramentas. Cada chamada vira uma fonte citável (`[cálculo: lei_de_ohm]`) e
+fica no rastro com as entradas e as saídas. Um número que não veio de um
+trecho, de uma ferramenta, da sua pergunta ou de um valor **confirmado** do
+perfil é marcado como suspeito, mesmo que a conta esteja certa.
+
+| Ferramenta | O que faz |
+|---|---|
+| `lei_de_ohm`, `potencia` | V, I, R e P (dois valores dados, o resto calculado) |
+| `divisor_tensao` | Saída nominal e de pior caso pela tolerância dos resistores |
+| `escolher_divisor` | Escolhe R1/R2 **entre os resistores do seu inventário** |
+| `queda_tensao_fio` | Em mm² ou AWG, com retorno pelo chassi ou ida e volta, com temperatura |
+| `dimensionar_fusivel` | Fusível de lâmina padrão (regra prática, marcada como tal) e conferência com o fio |
+| `filtro_rc` | Frequência de corte e constante de tempo |
+| `converter_unidade` | Conversões com `pint` (kgf·m, N·m, psi, bar, °C...) |
+| `verificar_pinos_esp32` | Alertas da sua placa: só entrada, strapping, flash, ADC2 com Wi-Fi, UART |
+| `rotacao_por_pulsos` | Hz do sinal de ignição ↔ rpm (4 cilindros, 4 tempos = 2 faíscas por volta) |
+| `velocidade_por_rotacao` | km/h pela rotação, relações e medida do pneu |
+| `lambda_afr` | λ ↔ AFR. Recusa calcular sem a estequiometria **confirmada com fonte** |
+| `consultar_inventario` | O que você tem na bancada |
+| `buscar_caderno` | O que você já fez ou mediu |
+| `ler_telemetria` | Preparada para a fase 6 (MQTT do carro); por enquanto avisa que não existe |
+
+Cada ferramenta também roda direto pela CLI, sem LLM:
+
+```bash
+engenheiro ferramenta
+```
+
+```bash
+engenheiro ferramenta divisor_tensao vin_v=14.4 r1_ohm=47000 r2_ohm=10000 vout_max_permitido_v=3.3
+```
+
+```bash
+engenheiro ferramenta verificar_pinos_esp32 pinos='[G34, G12]' uso=saida_digital
+```
+
+O primeiro comando lista as ferramentas e seus argumentos; os outros dois
+são exemplos de uso.
+
+As constantes ficam em `dados_ref/constantes.yaml`, cada uma com a sua fonte
+(cobre IACS, definição do AWG, valores de fusível). A tabela de pinos fica em
+`dados_ref/esp32_pinos.yaml`, marcada como "conferir com o datasheet" até
+você indexar o datasheet da Espressif.
+
+**Estequiometria do etanol:** o arquivo `dados_ref/combustiveis.yaml` vem
+**sem valores, de propósito**. O etanol da bomba é hidratado e a gasolina
+brasileira tem etanol misturado, então o número "de livro" não vale direto.
+Preencha com valor e fonte de um livro da base.
+
+### Perfil do veículo
+
+`perfil_veiculo.yaml` entra em toda resposta, separado em três grupos:
+CONFIRMADO, SUPOSIÇÃO (nunca tratada como fato) e DESCONHECIDO. As
+ferramentas só usam valores confirmados.
+
+```bash
+engenheiro perfil
+```
+
+```bash
+engenheiro perfil definir carburador.modelo "Weber 460" --status confirmado --fonte "gravação no corpo do carburador"
+```
+
+O primeiro mostra o perfil. O segundo atualiza um campo; cada mudança fica no
+`historico` do arquivo, com data, valor anterior e fonte.
+
+### Caderno de bordo
+
+```bash
+engenheiro anotar -t "Medição da bateria" --tag bateria "Medi 12,6 V com o motor desligado há 1 h"
+```
+
+```bash
+engenheiro caderno bateria
+```
+
+O primeiro grava a anotação; o segundo busca no caderno. As anotações ficam
+em `data/biblioteca/caderno_de_bordo/AAAA-MM-DD.md` (dá para editar à mão) e
+entram no índice na hora. A coleção do caderno é sempre consultada. Nas
+respostas, as anotações aparecem como `[Caderno 2026-11-07]` e são tratadas
+como registro seu, não como fonte técnica.
+
+### Busca na web (SearXNG)
+
+Siga `docker/searxng/compose.yaml`:
+
+```bash
+cd docker/searxng && cp settings.example.yml settings.yml
+```
+
+Troque a `secret_key` (gere uma com `openssl rand -hex 32`) e suba o serviço:
+
+```bash
+docker compose up -d
+```
+
+No `config.yaml`, aponte `web.searxng_url` para o serviço. Por padrão
+(`web.modo: pedido`), ele só busca quando você pede ("pesquise na internet...").
+
+Tudo o que vem da web aparece na seção **Web (NÃO verificado)**, com o link.
+Uma afirmação que o modelo marcar como "fonte" mas que só veio da web é
+reclassificada como web. Informação crítica vinda só da web gera um aviso no
+topo da resposta.
+
 ## Inventário de componentes
 
 `inventario/componentes.yaml` lista o que existe fisicamente na bancada, para
@@ -165,8 +274,9 @@ engenheiro inventario --pendencias
 ```
 
 O primeiro lista os componentes. O segundo mostra o que falta contar,
-fotografar ou confirmar. A partir da fase 3, o engenheiro consulta o
-inventário antes de sugerir um circuito.
+fotografar ou confirmar. Desde a fase 3, o engenheiro consulta o inventário
+(`consultar_inventario`) antes de sugerir um circuito, e o `escolher_divisor`
+só usa resistores que você tem.
 
 ## Máquinas
 

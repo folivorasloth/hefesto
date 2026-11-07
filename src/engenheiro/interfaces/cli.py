@@ -251,6 +251,8 @@ _FRASES_PASSO = {
     "busca.vetor": lambda d: f"semântica: {sum(d['acertos'].values())} acertos",
     "busca.rerank": lambda d: f"reranker avaliou {d['avaliados']} candidatos",
     "busca.relevantes": lambda d: f"{d['quantidade']} trechos relevantes ({d['descartados']} abaixo do limiar)",
+    "ferramenta.chamada": lambda d: f"ferramenta {d['id']} {d['nome']}" + (f": ERRO {d['erro']}" if d["erro"] else ""),
+    "web.busca": lambda d: f"web: {d['resultados']} resultados ({d['motivo']})",
     "geracao.concluida": lambda d: f"resposta gerada com {d['afirmacoes']} afirmações",
     "verificacao.concluida": lambda d: (
         f"verificação: {d['removidas']} removidas, {d['rebaixadas']} rebaixadas, {d['criticos']} problemas críticos"
@@ -351,6 +353,106 @@ def inventario(
         con.print("\n[bold]Faltando (sugestão, prioridade):[/]")
         for f in dados.faltando_sugerido:
             con.print(Text(f"  • [{f.get('prioridade', '?')}] {f['item']}: {f.get('motivo', '')}"))
+
+
+# ---------------------------------------------------------------- fase 3
+@app.command()
+def anotar(
+    texto: str = typer.Argument(..., help="O que você fez, mediu ou decidiu"),
+    titulo: Optional[str] = typer.Option(None, "--titulo", "-t"),
+    tag: Optional[list[str]] = typer.Option(None, "--tag", help="Repetível: --tag bateria --tag medicao"),
+    config: Optional[Path] = OpcConfig,
+    embedder_falso: bool = OpcFalso,
+):
+    """Grava no caderno de bordo (com data e hora) e indexa na hora."""
+    cfg = carregar_config(config)
+    bco = fabrica.banco(cfg)
+    cli = fabrica.cliente_ollama(cfg)
+    emb = fabrica.embedder(cfg, embedder_falso) if (embedder_falso or cli.disponivel()) else None
+    a = fabrica.caderno(cfg, bco, emb).registrar(texto, titulo, tag)
+    con.print(f"Anotado em {escape(a.arquivo)}: {escape(a.citacao)} {escape(a.titulo)}")
+    if emb is None:
+        con.print("[dim]Ollama fora: a anotação já está na busca por palavra-chave; o embedding sai na próxima indexação.[/]")
+
+
+@app.command("caderno")
+def ver_caderno(
+    termo: str = typer.Argument("", help="Palavras a procurar (vazio = mais recentes)"),
+    limite: int = typer.Option(10, "-n"),
+    config: Optional[Path] = OpcConfig,
+):
+    """Busca no caderno de bordo."""
+    cfg = carregar_config(config)
+    for a in fabrica.caderno(cfg).buscar(termo, limite):
+        con.print(Text(f"{a.citacao} {a.titulo}", style="bold"))
+        con.print(Text(a.texto + (f"\n  tags: {', '.join(a.tags)}" if a.tags else "")))
+        con.print()
+
+
+perfil_app = typer.Typer(help="Perfil do veículo (perfil_veiculo.yaml)")
+app.add_typer(perfil_app, name="perfil")
+
+
+@perfil_app.callback(invoke_without_command=True)
+def perfil_mostrar(ctx: typer.Context, config: Optional[Path] = OpcConfig):
+    """Mostra o perfil como ele entra no prompt."""
+    if ctx.invoked_subcommand is None:
+        con.print(Text(fabrica.perfil(carregar_config(config)).para_prompt()))
+
+
+@perfil_app.command("definir")
+def perfil_definir(
+    campo: str = typer.Argument(..., help="grupo.campo, ex.: carburador.modelo"),
+    valor: str = typer.Argument(..., help="Valor (números viram número; listas: '[3.45, 1.94]')"),
+    status: str = typer.Option(..., "--status", help="confirmado | suposicao | a_confirmar"),
+    fonte: Optional[str] = typer.Option(None, "--fonte", help="De onde veio (obrigatório se confirmado)"),
+    observacao: Optional[str] = typer.Option(None, "--obs"),
+    config: Optional[Path] = OpcConfig,
+):
+    """Atualiza um campo do perfil e registra no histórico."""
+    import yaml as _yaml
+
+    from engenheiro.perfil import PerfilInvalido
+
+    try:
+        v = _yaml.safe_load(valor)   # "4" -> 4, "[1, 2]" -> lista, texto continua texto
+    except _yaml.YAMLError:
+        v = valor
+    try:
+        novo = fabrica.perfil(carregar_config(config)).definir(campo, v, status, fonte, observacao)
+    except PerfilInvalido as e:
+        con.print(Text(str(e), style="red"))
+        raise typer.Exit(1)
+    con.print(Text(f"{campo} = {novo}"))
+
+
+@app.command()
+def ferramenta(
+    nome: Optional[str] = typer.Argument(None, help="Nome da ferramenta (vazio = lista)"),
+    args: Optional[list[str]] = typer.Argument(None, help="argumentos chave=valor, ex.: tensao_v=12 corrente_a=2"),
+    config: Optional[Path] = OpcConfig,
+):
+    """Roda uma ferramenta de cálculo direto, sem LLM. Ex.:
+    engenheiro ferramenta divisor_tensao vin_v=14.4 r1_ohm=47000 r2_ohm=10000 vout_max_permitido_v=3.3"""
+    import yaml as _yaml
+
+    cfg = carregar_config(config)
+    reg = fabrica.registro_ferramentas(cfg, Barramento(), fabrica.caderno(cfg), fabrica.perfil(cfg))
+    if not nome:
+        for f in reg.ferramentas.values():
+            props = ", ".join(f.parametros.get("properties", {}))
+            con.print(Text(f"{f.nome}({props})", style="bold"))
+            con.print(Text(f"  {f.descricao}"))
+        return
+    argumentos = {}
+    for a in args or []:
+        chave, _, valor = a.partition("=")
+        argumentos[chave] = _yaml.safe_load(valor) if valor else None
+    ch = reg.executar(nome, argumentos)
+    if ch.erro:
+        con.print(Text(f"Erro: {ch.erro}", style="red"))
+        raise typer.Exit(1)
+    typer.echo(json.dumps(ch.saida, ensure_ascii=False, indent=2, default=str))
 
 
 @app.command("corpus-teste")
