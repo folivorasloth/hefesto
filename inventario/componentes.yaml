@@ -75,7 +75,7 @@ itens:
   - id: optoacoplador-el817
     nome: Optoacoplador EL817
     categoria: interface
-    quantidade: null
+    quantidade: 1
     projetos: [hefesto, divine_machinery]
     especificacoes:
       - {item: marcacao, valor: "EL 817 A511", status: confirmado, fonte: relato do usuário 2026-11-07}
@@ -125,7 +125,7 @@ itens:
   - id: buzzer-ativo-5v
     nome: Buzzer ativo 5 V
     categoria: saida
-    quantidade: null
+    quantidade: 1
     projetos: [hefesto, divine_machinery]
     especificacoes:
       - {item: tipo, valor: "ativo (tem oscilador interno: basta alimentar para apitar, sem gerar frequência)", status: confirmado, fonte: descrição da compra}
