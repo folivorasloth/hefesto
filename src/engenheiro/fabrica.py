@@ -101,3 +101,16 @@ def engenheiro(cfg: Config, bco: Banco, bus: Barramento, embedder_falso: bool = 
     if cfg.web.searxng_url:
         busca_web = lambda q: web.buscar(cfg.web.searxng_url, q, cfg.web.maximo_resultados)  # noqa: E731
     return Engenheiro(cfg, rec, llm, persona, seg, bus, prf.para_prompt(), reg, busca_web, prf.valores_confirmados())
+
+
+def conversador(cfg: Config, bco: Banco, bus: Barramento, nova: bool = False, embedder_falso: bool = False,
+                com_reranker: bool | None = None):
+    """Assistente + sessão de conversa (continua a última, salvo `nova`)."""
+    from engenheiro.conversa import Conversador, Sessao
+
+    eng = engenheiro(cfg, bco, bus, embedder_falso, com_reranker)
+    pasta = cfg.caminho(cfg.caminhos.rastros).parent / "conversas"
+    sessao = None if nova else Sessao.ultima(pasta)
+    prf = perfil(cfg)
+    cad = caderno(cfg, bco, eng.rec.embedder, bus)
+    return Conversador(eng, prf, cad, pasta, sessao)

@@ -1,4 +1,4 @@
-# Hefesto: o Engenheiro
+# Hefesto
 
 Assistente pessoal de engenharia (mecânica, elétrica automotiva, ESP32) para o
 projeto de telemetria de um VW Gol CL 1994 1.6 AP a etanol, carburado.
@@ -15,11 +15,12 @@ O identificador técnico é `engenheiro`. Nome, tom e exemplos ficam em
 
 | Fase | Conteúdo | Estado |
 |---|---|---|
-| 1 | Ingestão (Docling + OCR), corte por seção, índice híbrido (BM25 + vetores), reranker, CLI de busca, avaliação de recuperação | **pronta** |
+| 1 | Ingestão (Docling + OCR), corte por seção, índice híbrido (BM25 + vetores), reranker, CLI de busca | **pronta** |
 | 2 | Respostas com citações + verificador, segurança determinística, persona, rastro completo | **pronta** (validar com o seu Ollama) |
-| 3 | Ferramentas de cálculo, tabela de pinos do ESP32, perfil do veículo, caderno de bordo, busca web (SearXNG) | **pronta** (validar com o seu Ollama) |
-| 4 | Avaliação completa (fatos-chave, citações, "não sei") | parcial (modos `recuperacao` e `resposta` já existem) |
-| 5 | Voz e mumbling | — |
+| 3 | Ferramentas de cálculo, pinos do ESP32, perfil do veículo, caderno de bordo, busca web (SearXNG) | **pronta** (validar com o seu Ollama) |
+| Conversa | Conversa contínua com memória, modo guiado, conhecimento geral rotulado, aprende com confirmação | **pronta** (validar com o seu Ollama) |
+| 5 | Voz: palavra de ativação "Hefesto", botão de falar, mumbling | próxima |
+| 4 | Avaliação completa (fatos-chave, citações, "não sei") | parcial (modos `recuperacao` e `resposta`) |
 | 6 | API HTTP e MQTT | — |
 
 ## Como funciona (fase 1)
@@ -51,6 +52,59 @@ As decisões e os porquês estão comentados no código. Os pontos principais:
   visão são marcados como tal e aparecem com aviso.
 - **Degradação explícita.** Sem Ollama, a busca segue só por palavra-chave e
   avisa. Sem reranker, vale a ordem RRF e avisa. Nunca há falha silenciosa.
+
+## Conversando com o Hefesto
+
+```bash
+engenheiro conversar
+```
+
+O Hefesto conversa como uma pessoa: lembra o que foi dito, entende as respostas
+curtas e guia você no carro passo a passo. A conversa continua de onde parou
+(`--nova` começa outra). Dentro dela, os comandos são `/perfil` (o que ele sabe do
+carro), `/rastro` (auditar a última resposta), `/nova` e `/sair`. Pode começar a fala
+com "Hefesto, ...", como vai ser na voz.
+
+Exemplo do formato:
+
+```
+Você: Hefesto, como eu identifico o tipo de ignição?
+Hefesto: Conhecimento geral (meu, NÃO está nas suas fontes; serve para orientar onde olhar):
+         • Abra o capô e localize o distribuidor...
+         ➜ Quantos fios entram no conector do distribuidor?
+Você: tem 3 fios no conector
+Hefesto: (...)
+         Quer que eu registre isso? (sim / não)
+           1. perfil observacoes.fios_conector = 3 fios como CONFIRMADO (você viu)
+           2. perfil ignicao.tipo = sensor Hall como SUPOSIÇÃO (interpretação minha)
+Você: sim
+Hefesto: Anotado: ...
+```
+
+### O que muda em relação a `engenheiro perguntar`
+
+- **Memória e reescrita:** cada fala é reescrita como pergunta completa antes da
+  busca ("tem 3 fios" vira "o conector do distribuidor tem 3 fios; o que isso
+  indica?"). O rastro guarda a fala original e a reescrita.
+- **Modo guiado:** em identificação e diagnóstico, ele dá o próximo passo e
+  termina com uma pergunta sobre o que você está vendo.
+- **Conhecimento geral rotulado:** sem fonte na base, ele pode orientar onde olhar
+  e o que observar, numa seção própria. O código **remove** desse nível qualquer
+  número, valor, especificação ou instrução de mexer no carro: isso continua
+  exigindo fonte ou ferramenta.
+- **Velocidade:** perguntas de orientação sem valor nem risco ("onde fica", "como
+  identifico") usam o modelo rápido e pulam a etapa de ferramentas. Qualquer
+  valor, medida, procedimento ou segurança continua no modelo forte com o
+  verificador. O motivo da escolha fica no rastro.
+- **Aprende com confirmação:** quando você conta o que viu ou mediu, ele propõe
+  anotar no perfil (observação) ou no caderno (medição). Só grava com "sim".
+  O código descarta fato cujo trecho não está na sua fala e registra
+  interpretação como suposição, nunca como confirmado.
+- **Menos repetição:** o aviso de segurança completo de cada tema aparece uma vez
+  por conversa; depois, uma linha lembra que ele continua valendo.
+  Observações do sistema aparecem uma vez. Tudo fica no rastro.
+
+As conversas ficam em `data/conversas/`.
 
 ## Perguntando (fase 2)
 

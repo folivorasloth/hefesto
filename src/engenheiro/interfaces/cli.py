@@ -455,6 +455,60 @@ def ferramenta(
     typer.echo(json.dumps(ch.saida, ensure_ascii=False, indent=2, default=str))
 
 
+# ---------------------------------------------------------------- conversa
+@app.command()
+def conversar(
+    nova: bool = typer.Option(False, "--nova", help="Começa uma conversa nova (padrão: continua a última)"),
+    config: Optional[Path] = OpcConfig,
+    indice: Optional[Path] = OpcIndice,
+    sem_rerank: bool = typer.Option(False, "--sem-rerank"),
+    mostrar_passos: bool = typer.Option(True, "--passos/--sem-passos"),
+    embedder_falso: bool = OpcFalso,
+):
+    """Conversa contínua com o Hefesto (memória, modo guiado, aprende com confirmação).
+
+    Comandos dentro da conversa: /sair, /nova, /perfil, /rastro, /ajuda
+    """
+    cfg = carregar_config(config)
+    bus = Barramento()
+    if mostrar_passos:
+        bus.assinar(_mostrar_passo)
+    conv = fabrica.conversador(cfg, fabrica.banco(cfg, indice), bus, nova, embedder_falso, False if sem_rerank else None)
+    nome = conv.eng.persona.nome
+    if conv.eng.llm is None:
+        con.print(f"[yellow]Ollama inacessível em {cfg.ollama.url}: {nome} só consegue apontar trechos, sem conversar.[/]")
+    retomada = bool(conv.sessao.turnos)
+    con.print(f"[bold]{escape(nome)}[/] [dim]({'continuando' if retomada else 'nova'} conversa {conv.sessao.id}; /ajuda para comandos)[/]")
+    ultimo_rastro = None
+    while True:
+        try:
+            fala = con.input("[bold green]Você:[/] ").strip()
+        except (EOFError, KeyboardInterrupt):
+            con.print()
+            break
+        if not fala:
+            continue
+        if fala.startswith("/"):
+            cmd_ = fala.split()[0].lower()
+            if cmd_ in ("/sair", "/q"):
+                break
+            if cmd_ == "/nova":
+                from engenheiro.conversa import Sessao
+
+                conv.sessao = Sessao.nova()
+                con.print(f"[dim]Nova conversa {conv.sessao.id}.[/]")
+            elif cmd_ == "/perfil":
+                con.print(Text(conv.perfil.para_prompt()))
+            elif cmd_ == "/rastro":
+                con.print(f"[dim]engenheiro rastro {ultimo_rastro}[/]" if ultimo_rastro else "[dim]Sem rastro ainda.[/]")
+            else:
+                con.print("[dim]/sair, /nova (conversa nova), /perfil (o que ele sabe do carro), /rastro (auditar a última resposta)[/]")
+            continue
+        resp = conv.turno(fala)
+        ultimo_rastro = resp.rastro_id or ultimo_rastro
+        con.print(Panel(Text(resp.texto), title=escape(nome), title_align="left", border_style="cyan"))
+
+
 @app.command("corpus-teste")
 def corpus_teste(destino: Path = typer.Option(Path("data/teste"), help="Pasta de saída")):
     """Gera PDFs FICTÍCIOS (marcados como tal) para testar ingestão e busca."""

@@ -46,6 +46,9 @@ class RespostaFinal:
     modo: str
     encontrou: bool
     problemas_criticos: list[str] = field(default_factory=list)
+    pergunta_ao_usuario: str = ""
+    temas_seguranca: list[str] = field(default_factory=list)
+    observacoes: list[str] = field(default_factory=list)
 
 
 class Engenheiro:
@@ -82,19 +85,29 @@ class Engenheiro:
         return {"temperature": g.temperatura, "num_ctx": g.num_ctx}
 
     # ------------------------------------------------------------------
-    def responder(self, pergunta: str) -> RespostaFinal:
+    def responder(self, pergunta: str, conversa: bool = False, historico_txt: str = "",
+                  extra_rastro: dict | None = None, temas_ja_avisados: set[str] | None = None,
+                  observacoes_ja_dadas: set[str] | None = None) -> RespostaFinal:
+        """`conversa=True`: modo conversa (libera o modelo rápido para orientação).
+        `historico_txt`: turnos anteriores, para o modelo entender o contexto.
+        `extra_rastro`: dados da sessão (pergunta original, reescrita) para o rastro."""
         rid = rastro.novo_id()
         self.bus.eventos.clear()
-        r: dict = {"pergunta": pergunta, "nome": self.persona.nome}
+        r: dict = {"pergunta": pergunta, "nome": self.persona.nome, **(extra_rastro or {})}
+        self._ja_avisados = temas_ja_avisados or set()
+        self._obs_dadas = observacoes_ja_dadas or set()
+        if historico_txt:
+            r["historico"] = historico_txt
         self.bus.publicar("pergunta.recebida", pergunta=pergunta)
 
-        escolha = selecao.escolher(pergunta)
+        escolha = selecao.escolher(pergunta, conversa=conversa)
         r["escolha_modelo"] = asdict(escolha)
         self.bus.publicar("modelo.escolhido", **asdict(escolha))
 
         if escolha.modo == "conversa":
             return self._conversa(pergunta, rid, r)
-        return self._tecnica(pergunta, rid, r)
+        modelo = self._modelos.forte if escolha.nivel == "forte" else self._modelos.rapido
+        return self._tecnica(pergunta, rid, r, modelo, historico_txt, ferramentas=escolha.nivel == "forte")
 
     # ------------------------------------------------------------------
     def _conversa(self, pergunta: str, rid: str, r: dict) -> RespostaFinal:
@@ -155,7 +168,9 @@ class Engenheiro:
         self.bus.publicar("web.busca", motivo=motivo, resultados=len(resultados))
         return resultados
 
-    def _tecnica(self, pergunta: str, rid: str, r: dict) -> RespostaFinal:
+    def _tecnica(self, pergunta: str, rid: str, r: dict, modelo: str | None = None, historico_txt: str = "",
+                 ferramentas: bool = True) -> RespostaFinal:
+        modelo = modelo or self._modelos.forte
         avisos: list[str] = []
         en = self._traduzir(pergunta, r, avisos)
         extras_busca = [Variante("llm_ingles", en)] if en else []
@@ -188,15 +203,17 @@ class Engenheiro:
 
         g = self.cfg.geracao
         persona_txt = self.persona.para_prompt()
-        fixo = len(gerador.mensagens_base(persona_txt, self.perfil_txt, pergunta, [])[0]["content"]) + len(pergunta) + 200
+        fixo = len(gerador.mensagens_base(persona_txt, self.perfil_txt, pergunta, [], historico_txt)[0]["content"]) + len(pergunta) + 200
         contexto, av_ctx = gerador.montar_contexto(relevantes, g.num_ctx, fixo, g.max_trechos_contexto)
         avisos += av_ctx
 
         # --- etapa 1: ferramentas (contas, pinos, inventário, caderno)
         chamadas = []
-        if self.registro is not None and self.cfg.ferramentas.ativo:
-            base = gerador.mensagens_base(persona_txt, self.perfil_txt, pergunta, contexto)
-            et = etapa_ferramentas.executar(self.llm, self._modelos.forte, self.registro, base,
+        # Orientação no modo conversa (nível rápido) não tem conta a fazer: pula a
+        # etapa de ferramentas e economiza uma chamada inteira ao modelo.
+        if self.registro is not None and self.cfg.ferramentas.ativo and ferramentas:
+            base = gerador.mensagens_base(persona_txt, self.perfil_txt, pergunta, contexto, historico_txt)
+            et = etapa_ferramentas.executar(self.llm, modelo, self.registro, base,
                                             self.cfg.ferramentas.max_rodadas, self._opcoes(), g.pensar)
             chamadas = et.chamadas
             avisos += et.avisos
@@ -211,19 +228,19 @@ class Engenheiro:
         # --- etapa 2: resposta estruturada
         try:
             ger = gerador.gerar(
-                self.llm, self._modelos.forte, pergunta, persona_txt=persona_txt, perfil_txt=self.perfil_txt,
+                self.llm, modelo, pergunta, persona_txt=persona_txt, perfil_txt=self.perfil_txt,
                 num_ctx=g.num_ctx, temperatura=g.temperatura, pensar=g.pensar,
-                contexto=contexto, extras=[*chamadas, *web],
+                contexto=contexto, extras=[*chamadas, *web], historico_txt=historico_txt,
             )
         except (OllamaIndisponivel, RespostaInvalida, httpx.HTTPStatusError) as e:
             # HTTPStatusError: ex. modelo não instalado (ollama pull <modelo>).
-            avisos.append(f"Falha na geração com {self._modelos.forte}: {e}")
+            avisos.append(f"Falha na geração com {modelo}: {e}")
             return self._sem_llm(pergunta, rid, r, relevantes, seg, avisos)
         avisos += ger.avisos
         self.bus.publicar("geracao.concluida", afirmacoes=len(ger.afirmacoes), encontrou=ger.encontrou)
 
         self.bus.publicar("verificacao.iniciada", afirmacoes=len(ger.afirmacoes))
-        ver = verificar(ger, pergunta, self.llm, self._modelos.forte, self._opcoes(), g.pensar,
+        ver = verificar(ger, pergunta, self.llm, modelo, self._opcoes(), g.pensar,
                         textos_extras=[self.perfil_valores], ativo=self.cfg.verificador.ativo)
         self.bus.publicar(
             "verificacao.concluida",
@@ -236,7 +253,7 @@ class Engenheiro:
         vivas = " ".join(a.texto for a in ger.afirmacoes if a.status != "removida")
         usados = " ".join(t.texto for t in ger.contexto if t.id.startswith("T"))
         seg = self.seg.avisos_para(pergunta, vivas, " ".join(ger.sugestoes), usados)
-        texto = montar_texto(ger, ver, seg, avisos)
+        texto = montar_texto(ger, ver, seg, self._obs_novas(avisos), temas_ja_avisados=self._ja_avisados)
         encontrou = ger.encontrou and any(a.tipo == "fonte" and a.status != "removida" for a in ger.afirmacoes)
 
         r["geracao"] = {
@@ -263,7 +280,8 @@ class Engenheiro:
         r["avisos"] = avisos
         r["resposta_final"] = texto
         self._salvar(rid, r)
-        return RespostaFinal(texto, rid, "tecnico", encontrou, ver.problemas_criticos)
+        return RespostaFinal(texto, rid, "tecnico", encontrou, ver.problemas_criticos, ger.pergunta_ao_usuario,
+                             [t.tema for t in seg], avisos)
 
     def _sem_llm(self, pergunta, rid, r, relevantes, seg, avisos) -> RespostaFinal:
         if relevantes:
@@ -278,13 +296,19 @@ class Engenheiro:
         else:
             miolo = "Não encontrei isso nas fontes. (O modelo de linguagem também está indisponível agora.)"
             encontrou = False
-        texto = montar_texto(None, None, seg, avisos, nao_encontrei_padrao=miolo)
+        texto = montar_texto(None, None, seg, self._obs_novas(avisos), nao_encontrei_padrao=miolo,
+                             temas_ja_avisados=self._ja_avisados)
         r["sem_llm"] = True
         r["seguranca"] = [t.tema for t in seg]
         r["avisos"] = avisos
         r["resposta_final"] = texto
         self._salvar(rid, r)
-        return RespostaFinal(texto, rid, "tecnico", encontrou)
+        return RespostaFinal(texto, rid, "tecnico", encontrou, temas_seguranca=[t.tema for t in seg], observacoes=avisos)
+
+    def _obs_novas(self, avisos: list[str]) -> list[str]:
+        """Observações do sistema (ex.: "sem embedder") aparecem uma vez por
+        conversa; todas continuam no rastro."""
+        return [a for a in avisos if a not in self._obs_dadas]
 
     def _salvar(self, rid: str, r: dict) -> None:
         destino = rastro.salvar(self.cfg.caminho(self.cfg.caminhos.rastros), rid, r, self.bus)

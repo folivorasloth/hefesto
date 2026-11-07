@@ -21,6 +21,10 @@ from engenheiro.seguranca import AvisoTema
 from engenheiro.verificador.verificador import Verificacao
 
 
+_NOME_TEMA = {"ignicao": "ignição", "combustivel": "combustível", "bateria": "bateria", "partida_a_frio": "partida a frio",
+              "eletronica_12v": "eletrônica nos 12 V", "arrefecimento": "arrefecimento", "elevacao": "carro levantado"}
+
+
 def _citacoes(a: Afirmacao, r: RespostaGerada) -> str:
     por_id = {t.id: t for t in r.contexto}
     cits = list(dict.fromkeys(por_id[t].citacao for t in a.trechos if t in por_id))
@@ -65,7 +69,11 @@ def montar_texto(
     avisos_seguranca: list[AvisoTema],
     avisos_sistema: list[str] | None = None,
     nao_encontrei_padrao: str | None = None,
+    temas_ja_avisados: set[str] | None = None,
 ) -> str:
+    """`temas_ja_avisados` (modo conversa): temas de segurança cujo aviso
+    completo já foi dado nesta conversa viram uma linha de lembrete, em vez de
+    repetir o bloco inteiro a cada turno. O aviso nunca some."""
     blocos: list[str] = []
 
     if v and v.problemas_criticos:
@@ -78,6 +86,7 @@ def montar_texto(
         fontes = [a for a in vivas if a.tipo == "fonte"]
         infer = [a for a in vivas if a.tipo == "inferencia"]
         web = [a for a in vivas if a.tipo == "web"]
+        geral = [a for a in vivas if a.tipo == "geral"]
         if fontes:
             blocos.append("Das fontes:\n" + "\n".join(_linha(a, r) for a in fontes))
         if infer:
@@ -90,7 +99,14 @@ def montar_texto(
                 "Web (NÃO verificado: veio de busca na internet; confira o link antes de confiar):\n"
                 + "\n".join(_linha(a, r) for a in web)
             )
-        if not r.encontrou or not fontes:
+        if geral:
+            blocos.append(
+                "Conhecimento geral (meu, NÃO está nas suas fontes; serve para orientar onde olhar):\n"
+                + "\n".join(_linha(a, r) for a in geral)
+            )
+        if not fontes and geral and not r.falta and r.encontrou:
+            blocos.append("Nas suas fontes não encontrei isso: o que está acima é conhecimento geral, sem página para conferir.")
+        elif not r.encontrou or not fontes:
             txt = "Não encontrei isso nas fontes."
             if r.falta:
                 txt += f" {r.falta}"
@@ -115,8 +131,16 @@ def montar_texto(
         blocos.append(nao_encontrei_padrao)
 
     if avisos_seguranca:
-        linhas = list(dict.fromkeys(av for t in avisos_seguranca for av in t.avisos))
+        ja = temas_ja_avisados or set()
+        novos = [t for t in avisos_seguranca if t.tema not in ja]
+        repetidos = [_NOME_TEMA.get(t.tema, t.tema.replace("_", " ")) for t in avisos_seguranca if t.tema in ja]
+        linhas = list(dict.fromkeys(av for t in novos for av in t.avisos))
+        if repetidos:
+            linhas.append(f"Continuam valendo os avisos que já dei nesta conversa sobre: {', '.join(repetidos)}.")
         blocos.append("Segurança (avisos gerais do sistema):\n" + "\n".join(f"• {x}" for x in linhas))
     if avisos_sistema:
         blocos.append("Observações do sistema:\n" + "\n".join(f"• {x}" for x in avisos_sistema))
+    if r is not None and r.pergunta_ao_usuario:
+        # No modo guiado, a pergunta fecha a resposta: é o que a pessoa responde em seguida.
+        blocos.append(f"➜ {r.pergunta_ao_usuario}")
     return "\n\n".join(blocos)

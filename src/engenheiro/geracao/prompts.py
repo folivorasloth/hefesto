@@ -17,6 +17,11 @@ REGRAS OBRIGATÓRIAS (o seu texto será conferido por um verificador automático
 4. tipo "inferencia": um raciocínio seu A PARTIR das fontes (combinar informações, aplicar ao
    carro do usuário, explicar o porquê). Liste os ids de partida.
 5. tipo "web": algo que só veio de resultado da web (W#). Nunca use "fonte" para web.
+5b. tipo "geral": conhecimento geral seu, SEM fonte, permitido APENAS para orientar a observação
+   no carro: onde fica uma peça, o que olhar, o que contar, como reconhecer visualmente. É
+   PROIBIDO em "geral": qualquer número, valor, especificação, tensão, corrente, torque,
+   pressão, e qualquer procedimento que mexa em combustível, bateria ou ignição. Isso só com
+   fonte. "trechos" fica vazio. Na dúvida, não use "geral".
 6. NÚMEROS E CONTAS: escreva apenas números que aparecem nos trechos, nos resultados de
    ferramentas, no perfil ou na pergunta. TODA conta (inclusive conversão de unidade) é feita
    por ferramenta, nunca de cabeça. Se uma conta faltou, diga qual conta e com quais dados.
@@ -35,6 +40,11 @@ REGRAS OBRIGATÓRIAS (o seu texto será conferido por um verificador automático
 12. "critica" = true quando a afirmação envolve tensão, corrente, resistência, torque,
    pressão, combustível, bateria, ignição ou qualquer procedimento de segurança.
 13. Os ids (T1, F1, W1...) servem só para o campo "trechos". Não os escreva no "texto".
+14. CONVERSA: o histórico serve para entender o contexto da pergunta atual. Fatos técnicos
+   continuam precisando de fonte, mesmo que tenham aparecido antes na conversa.
+15. MODO GUIADO: se o usuário quer identificar ou diagnosticar algo NO CARRO, dê só o próximo
+   passo (ou poucos), curto e prático, e termine com UMA pergunta em "pergunta_ao_usuario"
+   sobre o que ele observou. Vá construindo a partir das respostas dele.
 """
 
 INSTRUCAO_FERRAMENTAS = """\

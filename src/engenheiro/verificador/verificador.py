@@ -22,6 +22,8 @@ Regras de decisão (conservadoras, porque o custo de errar é alto):
 | inferência | nao_suporta    | REMOVIDA                                         |
 | qualquer   | não verificado | fonte vira inferência "não verificada"           |
 | fonte      | número ausente | rebaixada; número marcado como suspeito          |
+| geral      | (sem LLM)      | REMOVIDA se tiver número, valor, especificação   |
+|            |                | ou instrução de mexer no carro; senão mantida    |
 
 Qualquer problema numa afirmação crítica (removida, não verificada ou com
 número suspeito) vai para `problemas_criticos`, que a resposta final mostra
@@ -49,6 +51,15 @@ _RE_CRITICO = re.compile(
 )
 
 
+# O que "conhecimento geral" (sem fonte) NUNCA pode trazer: valor, especificação
+# ou instrução de mexer em algo. Só orientação de observação.
+_RE_GERAL_PROIBIDO = re.compile(
+    r"tensao|corrente|volt|amper|ohm|resistencia|potencia|torque|aperto|pressao|temperatura|"
+    r"kgf|psi|\bbar\b|n\s*[·.]?\s*m\b|especifica|desconect|desmont|remov|solt[ae]|aperte|afrouxe|"
+    r"\bligue\b|jumper|curto|faca uma ponte|aplique|injete|borrife"
+)
+
+
 def eh_critica(texto: str) -> bool:
     return bool(_RE_CRITICO.search(normalizar(texto)))
 
@@ -71,6 +82,12 @@ def _validar_citacoes(r: RespostaGerada) -> None:
         if invalidos:
             a.notas.append(f"citação inexistente descartada: {', '.join(invalidos)}")
         a.trechos = [t for t in dict.fromkeys(a.trechos) if t in validos]
+        if a.tipo == "geral" and a.trechos:
+            # Citou algo: então não é "conhecimento geral", é raciocínio a partir de fonte.
+            a.tipo = "inferencia"
+            a.notas.append("conhecimento geral com citação: tratado como inferência")
+        elif a.tipo == "geral":
+            a.trechos = []
         so_web = bool(a.trechos) and all(t.startswith("W") for t in a.trechos)
         if a.tipo == "fonte" and so_web:
             # Web nunca é "fonte": vai para a seção não verificada.
@@ -118,7 +135,7 @@ def verificar(
 
     # --- passo LLM: só para afirmações que citam algo (as outras não têm o que conferir)
     # Web fica fora do verificador LLM: já sai marcada como não verificada.
-    alvo = [a for a in r.afirmacoes if a.trechos and a.tipo != "web"]
+    alvo = [a for a in r.afirmacoes if a.trechos and a.tipo not in ("web", "geral")]
     vereditos: dict[str, dict] = {}
     if not ativo:
         v.motivo_nao_executada = "verificador desligado no config"
@@ -138,6 +155,17 @@ def verificar(
         v.executada = True  # nada a verificar com LLM
 
     for a in r.afirmacoes:
+        if a.tipo == "geral":
+            a.veredito = "conhecimento_geral"
+            # Aqui o ASSUNTO não importa (orientar a olhar a ignição é justamente o
+            # objetivo); o que não pode é o CONTEÚDO: valor, especificação ou
+            # instrução de mexer. Por isso não usamos a marca de "crítica".
+            proibido = _RE_GERAL_PROIBIDO.search(normalizar(a.texto))
+            if proibido:
+                a.status = "removida"
+                a.justificativa = ("conhecimento geral (sem fonte) não pode trazer valor, especificação nem "
+                                   f"instrução de mexer no carro (termo: '{proibido.group(0)}')")
+            continue
         if a.tipo == "web":
             a.veredito = "web_nao_verificado"
             if a.critica:
@@ -183,11 +211,17 @@ def verificar(
     for a in r.afirmacoes:
         if a.status == "removida":
             continue
-        if a.tipo_original in ("fonte", "web") and a.trechos:
+        if a.tipo == "geral":
+            origens = []          # sem fonte: só a pergunta e o perfil confirmado
+        elif a.tipo_original in ("fonte", "web") and a.trechos:
             origens = [por_id[t] for t in a.trechos]
         else:
             origens = todos_trechos
         a.numeros_suspeitos = numeros_sem_origem(a.texto, origens + [pergunta] + extras)
+        if a.numeros_suspeitos and a.tipo == "geral":
+            a.status = "removida"
+            a.justificativa = "conhecimento geral com número sem fonte: " + ", ".join(a.numeros_suspeitos)
+            continue
         if a.numeros_suspeitos:
             a.notas.append("número sem origem verificável: " + ", ".join(a.numeros_suspeitos))
             if a.tipo == "fonte":

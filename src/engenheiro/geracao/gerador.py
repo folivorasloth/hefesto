@@ -75,6 +75,7 @@ class RespostaGerada:
     afirmacoes: list[Afirmacao]
     falta: str
     sugestoes: list[str]
+    pergunta_ao_usuario: str
     contexto: list                   # TrechoContexto + Chamada (F#) + ResultadoWeb (W#)
     mensagens: list[dict]            # o prompt exato, para o rastro
     bruto: str                       # a saída exata do modelo, para o rastro
@@ -103,7 +104,8 @@ def montar_contexto(candidatos: list[Candidato], num_ctx: int, tamanho_fixo: int
     return escolhidos, avisos
 
 
-def mensagens_base(persona_txt: str, perfil_txt: str, pergunta: str, contexto: list[TrechoContexto]) -> list[dict]:
+def mensagens_base(persona_txt: str, perfil_txt: str, pergunta: str, contexto: list[TrechoContexto],
+                   historico_txt: str = "") -> list[dict]:
     """Prefixo COMUM às duas chamadas ao modelo forte (ferramentas e resposta).
 
     As duas começam com exatamente o mesmo texto (regras, perfil, trechos e
@@ -112,7 +114,7 @@ def mensagens_base(persona_txt: str, perfil_txt: str, pergunta: str, contexto: l
     CPU é a parte mais lenta. Confira no rastro: prompt_eval_count da 2ª
     chamada deve ser bem menor que o tamanho total do prompt.
     """
-    sistema = "\n\n".join(p for p in [persona_txt, perfil_txt, prompts.REGRAS_RESPOSTA] if p)
+    sistema = "\n\n".join(p for p in [persona_txt, perfil_txt, prompts.REGRAS_RESPOSTA, historico_txt] if p)
     if contexto:
         corpo = "TRECHOS RECUPERADOS DA BASE:\n\n" + "\n\n".join(t.para_prompt() for t in contexto)
     else:
@@ -150,6 +152,7 @@ def gerar(
     max_trechos: int = 8,
     contexto: list[TrechoContexto] | None = None,
     extras: list | None = None,
+    historico_txt: str = "",
 ) -> RespostaGerada:
     """`contexto` já montado (quando a etapa de ferramentas rodou antes) ou
     `candidatos` para montar aqui. `extras`: chamadas de ferramenta (F#) e
@@ -159,7 +162,7 @@ def gerar(
         fixo = len(mensagens_base(persona_txt, perfil_txt, pergunta, [])[0]["content"]) + len(pergunta) + 200
         contexto, avisos = montar_contexto(candidatos or [], num_ctx, fixo, max_trechos)
     extras = list(extras or [])
-    mensagens = _mensagens_resposta(mensagens_base(persona_txt, perfil_txt, pergunta, contexto), extras)
+    mensagens = _mensagens_resposta(mensagens_base(persona_txt, perfil_txt, pergunta, contexto, historico_txt), extras)
     r = llm.chat(modelo, mensagens, formato=esquemas.RESPOSTA,
                  opcoes={"temperature": temperatura, "num_ctx": num_ctx}, pensar=pensar)
 
@@ -178,7 +181,7 @@ def gerar(
 
     afirmacoes = []
     for i, a in enumerate(d.get("afirmacoes") or [], start=1):
-        tipo = a.get("tipo") if a.get("tipo") in ("fonte", "inferencia", "web") else "inferencia"
+        tipo = a.get("tipo") if a.get("tipo") in ("fonte", "inferencia", "web", "geral") else "inferencia"
         afirmacoes.append(
             Afirmacao(
                 id=f"A{i}",
@@ -194,6 +197,7 @@ def gerar(
         afirmacoes=[a for a in afirmacoes if a.texto],
         falta=str(d.get("falta") or "").strip(),
         sugestoes=[str(s).strip() for s in d.get("sugestoes") or [] if str(s).strip()],
+        pergunta_ao_usuario=str(d.get("pergunta_ao_usuario") or "").strip(),
         contexto=list(contexto) + extras,
         mensagens=mensagens,
         bruto=r["conteudo"],
