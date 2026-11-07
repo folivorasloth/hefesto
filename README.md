@@ -21,7 +21,7 @@ O identificador técnico é `engenheiro`. Nome, tom e exemplos ficam em
 | Conversa | Conversa contínua com memória, modo guiado, conhecimento geral rotulado, aprende com confirmação | **pronta** (validar com o seu Ollama) |
 | 5 | Voz: palavra de ativação "Hefesto", botão de falar, mumbling, interrupção, modo dirigindo | **pronta** (validar com microfone real) |
 | 4 | Avaliação completa: fatos-chave com unidade, citação na fonte certa, "não sei", cenários de conversa, comparação | **pronta** |
-| 6 | API HTTP e MQTT | — |
+| 6 | API HTTP (FastAPI), MQTT com Last Will, telemetria ao vivo para `ler_telemetria` | **pronta** |
 
 ## Como funciona (fase 1)
 
@@ -306,6 +306,55 @@ rápido, geração e verificação no forte). Num i7 sem GPU com um modelo de 14
 conte alguns minutos por resposta. Para o `qwen3`, `geracao.pensar: false` no
 config deixa bem mais rápido; `true` pode raciocinar melhor. Compare os dois
 pela avaliação.
+
+## Serviço: API HTTP e MQTT (fase 6)
+
+```bash
+pip install -e ".[servico]"
+```
+
+```bash
+export HEFESTO_API_TOKEN="um-token-longo-qualquer"
+```
+
+```bash
+engenheiro servir
+```
+
+O último comando liga a API em `http://<máquina>:8765` (documentação interativa
+em `/docs`) e o MQTT, se `mqtt.host` estiver no config. `--sem-api` e
+`--sem-mqtt` desligam cada parte.
+
+**API (cabeçalho `Authorization: Bearer <token>`, exceto em `/status`):**
+
+| Rota | O que faz |
+|---|---|
+| `GET /status` | Estado, Ollama, sinais de telemetria recebidos |
+| `POST /perguntar` `{"pergunta": ...}` | Pergunta isolada |
+| `POST /conversas/{interlocutor}/turno` `{"fala": ...}` | Conversa com memória, uma por interlocutor |
+| `POST /conversas?interlocutor=...` | Começa uma conversa nova |
+| `GET /rastro/{id}` | Auditoria completa de uma resposta |
+| `POST /caderno` e `GET /caderno?termo=` | Anotar e buscar no caderno |
+| `GET /perfil` | Perfil do veículo |
+| `GET /ferramentas` e `POST /ferramentas/{nome}` | Calculadoras sem LLM, úteis para outros personagens |
+
+**MQTT:** o protocolo completo para os outros personagens está em
+[`docs/PROTOCOLO_MQTT.md`](docs/PROTOCOLO_MQTT.md). Em resumo:
+- entrada em `joao/fala/engenheiro`, como texto ou JSON
+  `{"texto", "id", "de"}`;
+- saída em `npc/engenheiro/fala`, em JSON com versão curta e completa;
+- status retido em `npc/engenheiro/status`, com Last Will "offline";
+- mumbling em `npc/engenheiro/pensamento`;
+- telemetria do carro em `carro/telemetria/#`, usada pela ferramenta
+  `ler_telemetria`.
+
+**Comportamento do serviço:**
+- O modelo atende **um pedido por vez**: o notebook não aguenta dois. Os
+  outros esperam na fila.
+- Se o Ollama estiver desligado, o estado fica `sem_cerebro` e **volta sozinho**
+  quando ele ligar.
+- O reranker é carregado ao ligar o serviço, para a primeira pergunta não
+  pagar esse tempo.
 
 ## Ferramentas, perfil, caderno e web (fase 3)
 

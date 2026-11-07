@@ -73,7 +73,8 @@ class Reranker(BaseModel):
 
 class Busca(BaseModel):
     candidatos_por_lista: int = 30
-    candidatos_rerank: int = 25
+    # Custo do reranker em CPU cresce linear com isto (ver config.example.yaml).
+    candidatos_rerank: int = 15
     final: int = 6
     rrf_k: int = 60
     roteamento: str = "palavras_chave"
@@ -142,6 +143,31 @@ class Voz(BaseModel):
     ativacao: Ativacao = Field(default_factory=Ativacao)
 
 
+class Api(BaseModel):
+    host: str = "0.0.0.0"
+    porta: int = 8765
+    # Token opcional (recomendado na rede de casa também). Prefira a variável
+    # de ambiente HEFESTO_API_TOKEN a escrever o token aqui.
+    token: str = ""
+
+
+class Mqtt(BaseModel):
+    ativo: bool = True
+    host: str = ""                 # endereço do Mosquitto; vazio = MQTT desligado
+    porta: int = 1883
+    usuario: str = ""              # senha: variável de ambiente HEFESTO_MQTT_SENHA
+    qos: int = 1
+    # {id} vira assistente.id ("engenheiro").
+    topico_fala: str = "npc/{id}/fala"
+    topico_status: str = "npc/{id}/status"
+    topico_entrada: str = "joao/fala/{id}"
+    topico_pensamento: str = "npc/{id}/pensamento"   # mumbling em texto ("" = não publica)
+    # Telemetria do carro: valores publicados abaixo deste prefixo ficam
+    # disponíveis para a ferramenta ler_telemetria (ex.: carro/telemetria/rpm).
+    telemetria_prefixo: str = "carro/telemetria/"
+    telemetria_max_idade_s: float = 10.0
+
+
 class Web(BaseModel):
     # URL do seu SearXNG (ver docker/searxng/). Vazio = busca web desligada.
     searxng_url: str = ""
@@ -178,6 +204,8 @@ class Config(BaseModel):
     ferramentas: Ferramentas = Field(default_factory=Ferramentas)
     web: Web = Field(default_factory=Web)
     voz: Voz = Field(default_factory=Voz)
+    api: Api = Field(default_factory=Api)
+    mqtt: Mqtt = Field(default_factory=Mqtt)
     perfil_veiculo: Path = Path("perfil_veiculo.yaml")
 
     # Pasta raiz do projeto (onde fica o config.yaml e dados_ref/).

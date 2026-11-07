@@ -117,7 +117,8 @@ def test_afirmacao_suportada_sai_com_citacao_de_livro_e_pagina(ambiente):
     # A tradução virou variante de busca e consulta do reranker:
     r = rastro.carregar(cfg.caminho(cfg.caminhos.rastros), resp.rastro_id)
     assert any(v["tipo"] == "llm_ingles" for v in r["busca"]["variantes"])
-    assert "llm_ingles" in r["busca"]["candidatos"][0]["rerank_por_consulta"]
+    # Trecho em português é pontuado pela pergunta original (o inglês fica para trechos em inglês).
+    assert set(r["busca"]["candidatos"][0]["rerank_por_consulta"]) == {"original"}
 
 
 # ---------------------------------------------------------------- citação inventada
@@ -325,3 +326,21 @@ def test_avaliacao_modo_resposta(ambiente):
     res = avaliar_respostas(eng, perguntas, cfg.caminho(cfg.caminhos.rastros))
     m = res["metricas"]
     assert m["fonte_aprovada"] == 1.0 and m["fatos_chave"] == 1.0 and m["falso_nao_sei"] == 0.0
+
+
+def test_volta_sozinho_quando_o_ollama_liga(ambiente):
+    _, criar = ambiente
+
+    class ClienteQueLiga(LLMRoteirizado):
+        ligado = False
+
+        def disponivel(self):
+            return self.ligado
+
+    cli = ClienteQueLiga(
+        resposta={"encontrou": False, "falta": "x", "sugestoes": [], "afirmacoes": []}, verificacao={"avaliacoes": []})
+    eng = criar(cli)
+    eng._INTERVALO_CHECAGEM_S = 0
+    assert "sem o modelo de linguagem" in eng.responder("Qual o torque do cabeçote?").texto
+    cli.ligado = True                     # o notebook do LLM ligou
+    assert "sem o modelo de linguagem" not in eng.responder("Qual o torque do cabeçote?").texto

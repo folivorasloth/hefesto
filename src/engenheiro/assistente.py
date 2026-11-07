@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 
 import httpx
 from dataclasses import asdict, dataclass, field
@@ -68,7 +69,7 @@ class Engenheiro:
     ) -> None:
         self.cfg = cfg
         self.rec = recuperador
-        self.llm = llm
+        self.llm = llm   # propriedade: confere se o Ollama está no ar (ver abaixo)
         self.persona = persona
         self.seg = seguranca
         self.bus = barramento or recuperador.bus
@@ -76,6 +77,31 @@ class Engenheiro:
         self.registro = registro
         self.perfil_valores = perfil_valores
         self.busca_web = busca_web
+
+    # O cliente do Ollama fica guardado sempre; `llm` só o devolve se ele
+    # estiver respondendo AGORA. Assim, se o notebook do LLM estava desligado
+    # quando o serviço subiu, o Hefesto "acorda" sozinho quando ele liga,
+    # sem reiniciar. A checagem é guardada por alguns segundos para não
+    # consultar o Ollama a cada uso dentro da mesma resposta.
+    _INTERVALO_CHECAGEM_S = 15.0
+
+    @property
+    def llm(self):
+        c = self._cliente
+        disponivel = getattr(c, "disponivel", None)
+        if c is None or disponivel is None:
+            return c
+        agora = time.monotonic()
+        if agora - self._ultima_checagem > self._INTERVALO_CHECAGEM_S:
+            self._ultimo_estado = bool(disponivel())
+            self._ultima_checagem = agora
+        return c if self._ultimo_estado else None
+
+    @llm.setter
+    def llm(self, cliente) -> None:
+        self._cliente = cliente
+        self._ultima_checagem = -1e9
+        self._ultimo_estado = False
 
     @property
     def _modelos(self):

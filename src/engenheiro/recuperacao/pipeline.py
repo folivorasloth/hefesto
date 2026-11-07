@@ -155,6 +155,30 @@ class Recuperador:
             avisos.append(f"{sem_embedding} trechos ainda sem embedding: só aparecem pela palavra-chave.")
         return saida
 
+    def _pontuar_por_idioma(self, consultas: dict[str, str], candidatos, textos) -> dict[str, list]:
+        """Com a pergunta original e a tradução, cada trecho é comparado só com
+        a versão no idioma DELE (trecho em inglês -> tradução). Mantém o ganho
+        do cross-lingual e corta o custo do reranker pela metade, que em CPU é
+        o passo mais caro da busca (medido: ~20 s para 25 trechos curtos).
+        Sem tradução, todos usam a pergunta original."""
+        if "llm_ingles" not in consultas or len(consultas) == 1:
+            nome, q = next(iter(consultas.items()))
+            return {nome: self.reranker.pontuar(q, textos)}
+        saida: dict[str, list] = {n: [None] * len(textos) for n in consultas}
+        grupos: dict[str, list[int]] = {}
+        for i, c in enumerate(candidatos):
+            nome = "llm_ingles" if c.trecho.idioma == "en" else "original"
+            grupos.setdefault(nome, []).append(i)
+        for nome, idx in grupos.items():
+            for i, sc in zip(idx, self.reranker.pontuar(consultas[nome], [textos[i] for i in idx])):
+                saida[nome][i] = sc
+        return saida
+
+    def preaquecer(self) -> None:
+        """Carrega o reranker já (serviço/voz), em vez de na primeira pergunta."""
+        if self.reranker is not None and hasattr(self.reranker, "_carregar"):
+            self.reranker._carregar()
+
     def _reordenar(self, consultas: dict[str, str], candidatos, final, avisos) -> list[Candidato]:
         if not candidatos:
             return []
@@ -164,14 +188,14 @@ class Recuperador:
         else:
             textos = [f"{c.trecho.secao}\n{c.trecho.texto}" for c in candidatos]
             try:
-                por_consulta = {nome: self.reranker.pontuar(q, textos) for nome, q in consultas.items()}
+                por_consulta = self._pontuar_por_idioma(consultas, candidatos, textos)
             except Exception as e:  # noqa: BLE001 - reranker com defeito não pode zerar a busca
                 avisos.append(f"Reranker falhou ({e!r}); usando a ordem da fusão RRF.")
                 self.bus.publicar("busca.rerank_falhou", erro=repr(e))
                 escolhidos = candidatos[:final]
             else:
                 for i, c in enumerate(candidatos):
-                    c.rerank_por_consulta = {n: round(sc[i], 4) for n, sc in por_consulta.items()}
+                    c.rerank_por_consulta = {n: round(sc[i], 4) for n, sc in por_consulta.items() if sc[i] is not None}
                     c.rerank = max(c.rerank_por_consulta.values())
                 self.bus.publicar("busca.rerank", avaliados=len(candidatos), consultas=list(consultas))
                 escolhidos = sorted(candidatos, key=lambda c: c.rerank, reverse=True)[:final]

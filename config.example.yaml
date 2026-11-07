@@ -58,7 +58,10 @@ ingestao:
 
 busca:
   candidatos_por_lista: 30   # quantos cada busca (BM25 / vetor, por variante) devolve
-  candidatos_rerank: 25      # quantos vão para o reranker após a fusão
+  # Quantos vão para o reranker após a fusão. Em CPU cada trecho custa ~1-3 s;
+  # menos = mais rápido, mas a fonte certa pode ficar de fora (a avaliação mede:
+  # fonte_recuperada_mas_cortada_no_rerank). Com GPU, pode subir para 25-30.
+  candidatos_rerank: 15
   final: 6                   # quantos ficam no fim
   rrf_k: 60                  # constante do Reciprocal Rank Fusion (60 é o valor do artigo original)
   roteamento: palavras_chave # "palavras_chave" ou "todas"
@@ -120,3 +123,21 @@ voz:
     modelo_openwakeword: ""    # modelo treinado para "Hefesto" (ver README)
     limiar_openwakeword: 0.5
     modelo_whisper_ativacao: tiny
+
+api:
+  host: 0.0.0.0
+  porta: 8765
+  token: ""          # prefira a variável de ambiente HEFESTO_API_TOKEN
+
+mqtt:
+  ativo: true
+  host: ""           # endereço do seu Mosquitto (homelab); vazio = MQTT desligado
+  porta: 1883
+  usuario: ""        # senha na variável de ambiente HEFESTO_MQTT_SENHA
+  qos: 1
+  topico_fala: "npc/{id}/fala"
+  topico_status: "npc/{id}/status"
+  topico_entrada: "joao/fala/{id}"
+  topico_pensamento: "npc/{id}/pensamento"
+  telemetria_prefixo: "carro/telemetria/"
+  telemetria_max_idade_s: 10

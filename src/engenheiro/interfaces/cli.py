@@ -625,6 +625,51 @@ def audio_ouvir(config: Optional[Path] = OpcConfig):
     con.print(Text(f"Ouvi: {texto}\nPalavra de ativação: {'sim' if ativou else 'não'}; pergunta: {resto if ativou else '-'}"))
 
 
+# ---------------------------------------------------------------- serviço (fase 6)
+@app.command()
+def servir(
+    api: bool = typer.Option(True, "--api/--sem-api", help="Liga a API HTTP"),
+    mqtt: bool = typer.Option(True, "--mqtt/--sem-mqtt", help="Liga o MQTT (precisa de mqtt.host no config)"),
+    config: Optional[Path] = OpcConfig,
+):
+    """Roda o Hefesto como serviço: API HTTP e/ou MQTT (Divine Machinery)."""
+    import os
+
+    cfg = carregar_config(config)
+    svc = fabrica.servico(cfg)
+    nome = svc.eng.persona.nome
+    if svc.eng.llm is None:
+        con.print(f"[yellow]Ollama inacessível em {cfg.ollama.url}: estado 'sem_cerebro'; ele volta sozinho quando o Ollama ligar.[/]")
+    cli_mqtt = None
+    if mqtt and cfg.mqtt.ativo and cfg.mqtt.host:
+        cli_mqtt = fabrica.cliente_mqtt(cfg, svc)
+        cli_mqtt.iniciar()
+        con.print(f"MQTT: {cfg.mqtt.host}:{cfg.mqtt.porta}  entrada={cli_mqtt.t_entrada}  saída={cli_mqtt.t_fala}  status={cli_mqtt.t_status}")
+    elif mqtt:
+        con.print("[dim]MQTT desligado (mqtt.host vazio no config).[/]")
+    try:
+        if api:
+            import uvicorn
+
+            from engenheiro.interfaces.api import criar_app
+
+            token = os.environ.get("HEFESTO_API_TOKEN") or cfg.api.token
+            if not token:
+                con.print("[yellow]API sem token: qualquer um na rede pode usar. Defina HEFESTO_API_TOKEN.[/]")
+            con.print(f"API: http://{cfg.api.host}:{cfg.api.porta}  (documentação em /docs)")
+            uvicorn.run(criar_app(svc, token), host=cfg.api.host, port=cfg.api.porta, log_level="warning")
+        elif cli_mqtt:
+            con.print(f"{escape(nome)} no ar pelo MQTT. Ctrl+C para sair.")
+            import threading
+
+            threading.Event().wait()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        if cli_mqtt:
+            cli_mqtt.parar()
+
+
 @app.command("corpus-teste")
 def corpus_teste(destino: Path = typer.Option(Path("data/teste"), help="Pasta de saída")):
     """Gera PDFs FICTÍCIOS (marcados como tal) para testar ingestão e busca."""

@@ -7,6 +7,7 @@ ferramentas e verificador no mesmo arquivo, sob chaves próprias.
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -30,6 +31,12 @@ def salvar(pasta: Path, id_rastro: str, conteudo: dict, barramento: Barramento |
     return destino
 
 
+_RE_ID = re.compile(r"^\d{8}T\d{6}Z-[0-9a-f]{6}$")
+
+
 def carregar(pasta: Path, id_rastro: str) -> dict:
+    # O id pode vir de fora (API): só o formato exato vira caminho de arquivo.
+    if not _RE_ID.match(id_rastro):
+        raise ValueError(f"id de rastro inválido: {id_rastro!r}")
     data = id_rastro[:8]
     return json.loads((pasta / data[:4] / data[4:6] / f"{id_rastro}.json").read_text(encoding="utf-8"))

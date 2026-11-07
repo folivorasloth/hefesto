@@ -197,10 +197,27 @@ def test_registro_valida_argumentos_e_registra_chamadas():
 def test_registro_lambda_e_telemetria_honestos():
     reg = criar_registro(RAIZ)
     assert "não foi confirmada" in reg.executar("lambda_afr", {"combustivel": "etanol_hidratado", "lambda": 1.0}).erro
-    assert "ainda não disponível" in reg.executar("ler_telemetria", {"sinal": "rpm"}).erro
+    assert "indisponível" in reg.executar("ler_telemetria", {"sinal": "rpm"}).erro
 
 
 def test_registro_inventario():
     reg = criar_registro(RAIZ)
     ch = reg.executar("consultar_inventario", {"termo": "esp32"})
     assert any(i["id"] == "esp32-devkit-38p" for i in ch.saida["resultado"]["itens"])
+
+
+def test_telemetria_ao_vivo_recusa_dado_velho():
+    from engenheiro.telemetria import TelemetriaCache
+
+    agora = [1000.0]
+    cache = TelemetriaCache("carro/telemetria/", max_idade_s=10, relogio=lambda: agora[0])
+    cache.atualizar("carro/telemetria/rpm", b"912")
+    cache.atualizar("carro/telemetria/temp_motor", b'{"valor": 88.5, "unidade": "\u00b0C"}')
+    assert cache.atualizar("outro/topico", b"1") is None
+    reg = criar_registro(RAIZ, telemetria=cache)
+    ch = reg.executar("ler_telemetria", {"sinal": "temp_motor"})
+    assert ch.saida["resultado"]["valor"] == 88.5 and ch.saida["resultado"]["unidade"] == "°C"
+    assert reg.executar("ler_telemetria", {"sinal": "rpm"}).saida["resultado"]["valor"] == 912
+    agora[0] += 30
+    assert "dado velho" in reg.executar("ler_telemetria", {"sinal": "rpm"}).erro
+    assert "rpm" in reg.executar("ler_telemetria", {"sinal": "pressao_oleo"}).erro

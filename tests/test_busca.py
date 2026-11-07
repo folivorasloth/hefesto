@@ -135,3 +135,25 @@ def test_roteamento_sem_pista_busca_em_todas():
     todas = Config().colecoes
     r = rotear("pergunta qualquer", GLOSS, todas, ["veiculo"], "palavras_chave")
     assert r.colecoes == todas
+
+
+def test_reranker_usa_a_consulta_no_idioma_de_cada_trecho():
+    class Espiao:
+        nome = "espiao"
+
+        def __init__(self):
+            self.chamadas = []
+
+        def pontuar(self, consulta, textos):
+            self.chamadas.append((consulta, len(textos)))
+            return [0.5] * len(textos)
+
+    b = Banco(":memory:")
+    d = DadosDocumento("ignicao/l.pdf", "ignicao", "s", "d", "L", "L")
+    b.substituir_documento(d, [_trecho("bobina de ignição"), _trecho("ignition coil test")], ["pt", "en"])
+    rr = Espiao()
+    res = Recuperador(Config(), b, Glossario([]), None, rr).buscar(
+        "bobina ignition", consultas_rerank={"original": "bobina?", "llm_ingles": "coil?"})
+    assert sorted(rr.chamadas) == [("bobina?", 1), ("coil?", 1)]      # cada trecho avaliado UMA vez
+    por_trecho = {c.trecho.idioma: c.rerank_por_consulta for c in res.candidatos}
+    assert por_trecho == {"pt": {"original": 0.5}, "en": {"llm_ingles": 0.5}}

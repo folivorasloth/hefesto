@@ -88,9 +88,10 @@ def engenheiro(cfg: Config, bco: Banco, bus: Barramento, embedder_falso: bool = 
     from engenheiro.persona import Persona
     from engenheiro.seguranca import Seguranca
 
-    cli = cliente_ollama(cfg)
-    llm = cli if cli.disponivel() else None
-    emb = embedder(cfg, embedder_falso) if (llm is not None or embedder_falso) else None
+    # O cliente e o embedder existem sempre: se o Ollama estiver fora agora,
+    # cada pergunta percebe isso (e volta a usá-lo quando ele ligar).
+    llm = cliente_ollama(cfg)
+    emb = embedder(cfg, embedder_falso)
     rec = recuperador(cfg, bco, emb, bus, com_reranker)
     persona = Persona.carregar(cfg.caminho(cfg.assistente.persona))
     seg = Seguranca.carregar(cfg.dados_ref / "seguranca.yaml")
@@ -140,4 +141,34 @@ def loop_voz(cfg: Config, conv, modo_ativacao: str | None = None, dirigindo: boo
     else:
         raise ValueError(f"voz.ativacao.modo inválido: {modo} (transcricao | openwakeword | botao)")
     sint = Sintetizador(cfg.caminho(v.piper_voz), v.velocidade_fala)
+    conv.eng.rec.preaquecer()
     return LoopVoz(conv, MicrofoneSD(), AltoFalanteSD(), sint, stt, ativ, rec, v, dirigindo, mostrar)
+
+
+def servico(cfg: Config, embedder_falso: bool = False):
+    """Hefesto como serviço (API/MQTT): um assistente, perfil e caderno
+    compartilhados, telemetria ao vivo ligada à ferramenta ler_telemetria."""
+    from engenheiro.servico import Servico
+    from engenheiro.telemetria import TelemetriaCache
+
+    bus = Barramento()
+    bco = banco(cfg)
+    eng = engenheiro(cfg, bco, bus, embedder_falso)
+    tele = TelemetriaCache(cfg.mqtt.telemetria_prefixo, cfg.mqtt.telemetria_max_idade_s)
+    prf = perfil(cfg)
+    cad = caderno(cfg, bco, eng.rec.embedder, bus)
+    # O registro de ferramentas do serviço conhece a telemetria ao vivo.
+    from engenheiro.ferramentas import criar_registro
+
+    eng.registro = criar_registro(cfg.raiz, bus, cad, prf, tele)
+    eng.rec.preaquecer()
+    return Servico(eng, prf, cad, cfg.caminho(cfg.caminhos.rastros).parent / "conversas", tele)
+
+
+def cliente_mqtt(cfg: Config, svc):
+    from engenheiro.interfaces.mqtt import ClienteMqtt
+
+    m = cfg.mqtt
+    topicos = {"fala": m.topico_fala, "status": m.topico_status, "entrada": m.topico_entrada,
+               "pensamento": m.topico_pensamento, "telemetria": m.telemetria_prefixo}
+    return ClienteMqtt(svc, m.host, m.porta, m.usuario, None, m.qos, topicos, cfg.assistente.id)

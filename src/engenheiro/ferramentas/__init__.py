@@ -22,7 +22,8 @@ def _yaml(caminho: Path) -> dict:
     return yaml.safe_load(caminho.read_text(encoding="utf-8")) if caminho.exists() else {}
 
 
-def criar_registro(raiz: Path, barramento: Barramento | None = None, caderno=None, perfil=None) -> Registro:
+def criar_registro(raiz: Path, barramento: Barramento | None = None, caderno=None, perfil=None,
+                   telemetria=None) -> Registro:
     """`raiz` é a pasta do projeto (onde ficam dados_ref/ e inventario/)."""
     reg = Registro(barramento)
     ref = raiz / "dados_ref"
@@ -163,11 +164,15 @@ def criar_registro(raiz: Path, barramento: Barramento | None = None, caderno=Non
             buscar_caderno))
 
     def ler_telemetria(sinal: str) -> dict:
-        # Interface preparada: no futuro lê o tópico MQTT do carro.
-        raise ErroFerramenta(f"telemetria ao vivo ainda não disponível (sinal pedido: {sinal}); interface prevista para a fase 6")
+        # Sem cliente MQTT ligado, não há de onde ler (ver engenheiro servir).
+        if telemetria is None:
+            raise ErroFerramenta(f"telemetria ao vivo indisponível (sinal pedido: {sinal}): o serviço MQTT não está ligado")
+        return telemetria.ler(sinal)
 
     reg.registrar(Ferramenta(
-        "ler_telemetria", "Lê um sinal ao vivo do carro (rpm, temperatura...). AINDA NÃO DISPONÍVEL.",
-        {"type": "object", "required": ["sinal"], "properties": {"sinal": {"type": "string"}}},
+        "ler_telemetria",
+        "Lê o último valor AO VIVO de um sinal do carro (via MQTT), recusando dado velho. "
+        "Se o sinal não existir, o erro lista os sinais disponíveis.",
+        {"type": "object", "required": ["sinal"], "properties": {"sinal": {"type": "string", "description": "ex.: rpm, temp_motor"}}},
         ler_telemetria))
     return reg

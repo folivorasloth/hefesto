@@ -31,6 +31,11 @@ class RerankerCrossEncoder:
 
     def _carregar(self):
         if self._modelo is None:
+            import os
+
+            # Sem barras de progresso no log do serviço.
+            os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+            os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
             from sentence_transformers import CrossEncoder
 
             self._modelo = CrossEncoder(self.modelo_nome, max_length=self.max_tokens, device=self.dispositivo)
