@@ -134,15 +134,15 @@ vez de `python3 -m venv .venv`.
 ### 2.2 Baixar o projeto
 
 ```bash
-git clone -b revisao-geral https://github.com/folivorasloth/hefesto
+git clone https://github.com/folivorasloth/hefesto
 ```
 
 ```bash
 cd hefesto
 ```
 
-> O branch `revisao-geral` tem todas as fases revisadas. Depois de juntar tudo
-> na `main`, o `-b revisao-geral` deixa de ser necessário.
+> Se o pull request com o projeto ainda não tiver sido juntado na `main`, clone
+> o branch dele: `git clone -b dados-versoes-ci https://github.com/folivorasloth/hefesto`.
 
 ### 2.3 Ambiente Python
 
