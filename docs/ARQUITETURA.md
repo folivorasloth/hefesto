@@ -213,6 +213,7 @@ rastro e a avaliação medem os reais.
 | Docling + OCR no corpus de teste (4 PDFs pequenos) | ~15 s; o primeiro uso baixa ~500 MB de modelos |
 | Reranker, 25 trechos curtos | 20 s (max_tokens 1024) / 12 s (512) |
 | Pergunta pelo MQTT sem LLM, antes e depois das otimizações | 101 s → 9 s |
+| Instalação limpa (Python 3.12, PyTorch CPU, todos os extras) | 2,6 GB, sem pacotes NVIDIA |
 | Piper: 3,2 s de fala | gerados em 1,9 s |
 | Whisper tiny / small / medium em uma pergunta falada | 0,7 s / 1,9 s / 4,9 s |
 | Score do reranker: acerto típico × pergunta fora da base | ~0,97 × ~0,0007 |

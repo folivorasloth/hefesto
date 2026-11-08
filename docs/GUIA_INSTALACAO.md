@@ -113,7 +113,23 @@ sudo apt update
 sudo apt install -y git python3 python3-venv python3-dev tesseract-ocr tesseract-ocr-por tesseract-ocr-eng libportaudio2 mosquitto-clients
 ```
 
-Precisa de Python **3.11 ou mais novo**. Confira com `python3 --version`.
+Precisa de Python **3.12 ou mais novo**. Confira com `python3 --version`.
+O Ubuntu 24.04 já vem com o 3.12. Várias bibliotecas usadas (numpy, scipy,
+pint) não têm mais versão para o 3.11.
+
+Se a sua distribuição tiver um Python mais antigo (Ubuntu 22.04, Debian 12), o
+jeito mais simples é o `uv`, que baixa um Python 3.12 só para o projeto:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+```bash
+uv python install 3.12
+```
+
+Depois, na etapa 2.3, crie o ambiente com `uv venv --python 3.12 .venv` em
+vez de `python3 -m venv .venv`.
 
 ### 2.2 Baixar o projeto
 
@@ -142,13 +158,15 @@ python3 -m venv .venv
 NVIDIA, que é enorme. Sem GPU, instale antes a versão só para CPU:
 
 ```bash
-pip install torch --index-url https://download.pytorch.org/whl/cpu
+pip install torch==2.15.0 torchvision==0.29.2 --index-url https://download.pytorch.org/whl/cpu
 ```
 
-Instale o Hefesto com todos os extras:
+Instale o Hefesto com todos os extras, usando as **versões exatas que passaram
+nos testes** (`requisitos/testados.txt`). Sem o `-c`, o pip pega as mais novas
+de cada biblioteca, que podem ter mudado de comportamento:
 
 ```bash
-pip install -e ".[ingestao,reranker,voz,servico,dev]"
+pip install -e ".[ingestao,reranker,voz,servico,dev]" -c requisitos/testados.txt
 ```
 
 | Extra | Para quê | Pode deixar de fora se... |
@@ -265,7 +283,7 @@ apareceu e o id do rastro, quando houver.
 pytest
 ```
 
-✅ Cerca de 175 testes passando. Os de MQTT rodam se o `mosquitto` estiver
+✅ Cerca de 180 testes passando. Os de MQTT rodam se o `mosquitto` estiver
 instalado na máquina (`sudo apt install mosquitto` só para o teste; não
 precisa deixar o serviço ativo). Senão, são pulados.
 
@@ -275,7 +293,7 @@ Testes lentos (Docling, reranker, voz reais; baixam modelos na primeira vez):
 HEFESTO_VOZ_TESTE=data/vozes/pt_BR-faber-medium.onnx pytest -m ""
 ```
 
-✅ Cerca de 190 testes passando.
+✅ Cerca de 197 testes passando.
 
 ### T2. Busca no corpus de teste (sem LLM)
 
@@ -566,6 +584,25 @@ Para continuar rodando depois do logout:
 ```bash
 sudo loginctl enable-linger $USER
 ```
+
+### Backup automático diário
+
+Abra o agendador:
+
+```bash
+crontab -e
+```
+
+Acrescente esta linha (todo dia às 3h; troque o caminho pelo da sua cópia e,
+se quiser, o destino por uma pasta do homelab):
+
+```
+0 3 * * * cd /home/SEU_USUARIO/hefesto && .venv/bin/engenheiro backup --destino /home/SEU_USUARIO/backups-hefesto
+```
+
+Isso guarda o que não dá para recriar: perfil, inventário, caderno, conversas,
+avaliações e config. De vez em quando, rode também `engenheiro backup
+--completo` (livros, índice e cache, que levam noites para reprocessar).
 
 ---
 

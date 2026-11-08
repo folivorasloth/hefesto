@@ -69,8 +69,10 @@ você descobre, sempre com a sua confirmação.
 | 5 | Voz: ativação, Whisper, Piper, mumbling, interrupção, modo dirigindo | pronta |
 | 6 | API HTTP, MQTT com Last Will, telemetria ao vivo | pronta |
 
-Os 189 testes automáticos passam, inclusive os que rodam Docling, reranker,
-voz e Mosquitto de verdade. O que ainda falta validar na sua máquina, com o
+Os 197 testes automáticos passam, inclusive os que rodam Docling, reranker,
+voz e Mosquitto de verdade, numa instalação do zero em Python 3.12 com as
+versões travadas em `requisitos/testados.txt`. O GitHub roda os testes a cada
+envio (Python 3.12 e 3.13). O que ainda falta validar na sua máquina, com o
 modelo de linguagem real, o microfone da garagem e os seus livros, está no
 [guia](docs/GUIA_INSTALACAO.md) e nas
 [limitações](docs/ARQUITETURA.md#10-limitações-conhecidas).

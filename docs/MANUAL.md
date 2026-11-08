@@ -538,7 +538,7 @@ com `score_rerank_max_fora_da_base`, no modo `recuperacao`.
 pytest
 ```
 
-Esse comando roda os testes rápidos (cerca de 170, alguns segundos). Eles
+Esse comando roda os testes rápidos (cerca de 180, alguns segundos). Eles
 cobrem:
 - chunker, busca, citações e indexação incremental;
 - todas as ferramentas de cálculo, com valores conferíveis à mão;
