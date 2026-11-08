@@ -8,7 +8,7 @@ RAIZ = Path(__file__).parents[1]
 
 
 def test_inventario_real_e_valido():
-    inv = carregar(RAIZ / "inventario" / "componentes.yaml")
+    inv = carregar(RAIZ / "modelos" / "inventario.yaml")
     esp = inv.por_id("esp32-devkit-38p")
     assert esp is not None and esp.quantidade == 1
     # O alerta dos pinos de flash não pode sumir do inventário.

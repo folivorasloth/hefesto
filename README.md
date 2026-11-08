@@ -35,7 +35,8 @@ você descobre, sempre com a sua confirmação.
 | [**Manual**](docs/MANUAL.md) | Usar: livros, conversa, voz, ferramentas, perfil, caderno, serviço, avaliação |
 | [**Arquitetura**](docs/ARQUITETURA.md) | Como funciona, decisões e porquês, números medidos, limitações |
 | [**Protocolo MQTT**](docs/PROTOCOLO_MQTT.md) | Contrato para os outros personagens do Divine Machinery |
-| [Inventário](inventario/README.md) | Componentes da bancada |
+| [Inventário](docs/INVENTARIO.md) | Componentes da bancada |
+| [Seus dados e backup](docs/MANUAL.md#11-seus-dados-personalização-e-backup) | Onde ficam os seus dados, como personalizar e fazer backup |
 
 ## Comandos principais
 
@@ -54,6 +55,7 @@ você descobre, sempre com a sua confirmação.
 | `engenheiro servir` | API HTTP + MQTT (Divine Machinery) |
 | `engenheiro avaliar --modo ...` | Mede a qualidade e compara com a execução anterior |
 | `engenheiro status` | Ollama, modelos e índice |
+| `engenheiro personalizar` / `backup` | Ajustar arquivos de referência; guardar os seus dados |
 
 ## Estado
 

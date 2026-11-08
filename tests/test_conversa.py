@@ -61,7 +61,7 @@ class LLMConversa:
 def conversa(tmp_path):
     cfg = Config(raiz=tmp_path)
     perfil_arq = tmp_path / "perfil_veiculo.yaml"
-    perfil_arq.write_text((RAIZ / "perfil_veiculo.yaml").read_text(encoding="utf-8"), encoding="utf-8")
+    perfil_arq.write_text((RAIZ / "modelos" / "perfil_veiculo.yaml").read_text(encoding="utf-8"), encoding="utf-8")
     perfil = Perfil(perfil_arq)
 
     def criar(llm):

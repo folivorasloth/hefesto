@@ -266,7 +266,7 @@ modelos.
 ### Calibrando o limiar de relevância
 
 O `limiar_relevancia: 0.10` é provisório. Depois de indexar seus livros e
-preencher `eval/perguntas.yaml` (inclua perguntas cuja resposta NÃO está na
+preencher `data/usuario/avaliacao/perguntas.yaml` (inclua perguntas cuja resposta NÃO está na
 base), rode:
 
 ```bash
@@ -358,7 +358,7 @@ Preencha com valor e fonte de um livro da base.
 
 ### Perfil do veículo
 
-`perfil_veiculo.yaml` entra em toda resposta, separado em três grupos:
+O perfil (`data/usuario/perfil_veiculo.yaml`) entra em toda resposta, separado em três grupos:
 CONFIRMADO, SUPOSIÇÃO (nunca tratada como fato) e DESCONHECIDO. As
 ferramentas só usam valores confirmados.
 
@@ -413,10 +413,10 @@ topo da resposta.
 
 ## 7. Inventário de componentes
 
-`inventario/componentes.yaml` lista o que existe fisicamente na bancada, para
+`data/usuario/inventario.yaml` lista o que existe fisicamente na bancada, para
 este projeto e para o Divine Machinery. Toda especificação diz se foi
 confirmada, se é provável ou se falta confirmar, e de onde veio. Veja
-[`inventario/README.md`](../inventario/README.md).
+[INVENTARIO.md](INVENTARIO.md).
 
 ```bash
 engenheiro inventario
@@ -491,7 +491,7 @@ limiar, corte) deve ser medida antes e depois.
 | `resposta` | O assistente completo, pelo modo `perguntar` | sim |
 | `conversa` | O mesmo, pelo modo conversa (modelo rápido em orientação) | sim |
 | `completo` | Recuperação e resposta no mesmo relatório | sim |
-| `cenarios` | Conversas de vários turnos (`eval/cenarios.yaml`) | sim |
+| `cenarios` | Conversas de vários turnos (`data/usuario/avaliacao/cenarios.yaml`) | sim |
 
 ```bash
 engenheiro avaliar --modo completo
@@ -514,15 +514,17 @@ engenheiro avaliar --modo cenarios
 - `respostas_com_problema_critico`.
 - Tempo médio, mediana e máximo: é o número que diz se a GPU faz falta.
 
-**Relatórios:** cada execução grava `eval/relatorios/*.md` e `*.json`, com a
+**Relatórios:** cada execução grava `data/usuario/avaliacao/relatorios/*.md` e `*.json`, com a
 configuração usada, e compara com a execução anterior do mesmo arquivo,
 pergunta por pergunta, listando o que melhorou e **o que piorou**. Com
 `--falhar-se-piorar`, o comando sai com erro se algo piorou.
 
 **Seus arquivos:**
-- `eval/perguntas.yaml`: modelos desativados para você preencher com perguntas
+- `data/usuario/avaliacao/perguntas.yaml` (criado de `eval/perguntas.yaml` na
+  primeira vez): modelos desativados para você preencher com perguntas
   reais. Inclua algumas cuja resposta NÃO está na base.
-- `eval/cenarios.yaml`: conversas de exemplo que valem mesmo com a base vazia.
+- `data/usuario/avaliacao/cenarios.yaml` (criado de `eval/cenarios.yaml`):
+  conversas de exemplo que valem mesmo com a base vazia.
   A avaliação de cenários usa uma cópia do perfil: não grava no perfil do seu
   carro.
 - `eval/perguntas_corpus_teste.yaml`: perguntas sobre o corpus fictício.
@@ -570,3 +572,60 @@ Para rodar tudo:
 ```bash
 pytest -m ""
 ```
+
+## 11. Seus dados, personalização e backup
+
+**Onde ficam:** tudo o que é seu fica em `data/`, fora do git. Atualizar o
+projeto (`git pull`) nunca mexe nisso nem dá conflito.
+
+| O quê | Onde |
+|---|---|
+| Perfil do carro (com histórico) | `data/usuario/perfil_veiculo.yaml` |
+| Inventário da bancada | `data/usuario/inventario.yaml` |
+| Perguntas, cenários e relatórios de avaliação | `data/usuario/avaliacao/` |
+| Arquivos de referência personalizados | `data/usuario/dados_ref/`, `data/usuario/persona/` |
+| Caderno de bordo | `data/biblioteca/caderno_de_bordo/` |
+| Conversas | `data/conversas/` |
+| Livros, índice, cache, rastros | `data/biblioteca/`, `data/indice.sqlite`, `data/cache/`, `data/rastros/` |
+
+O perfil, o inventário e os arquivos de avaliação são criados na primeira vez
+a partir dos modelos do projeto (`modelos/`, `eval/`).
+
+**Personalizar um arquivo de referência:** estequiometria, glossário, avisos
+de segurança, pinos do ESP32, constantes e persona têm um padrão no projeto.
+Para mudar um deles, crie a sua cópia:
+
+```bash
+engenheiro personalizar
+```
+
+```bash
+engenheiro personalizar combustiveis
+```
+
+O primeiro lista o que dá para personalizar. O segundo cria
+`data/usuario/dados_ref/combustiveis.yaml`. Edite essa cópia: ela passa a
+valer no lugar do padrão. Para voltar ao padrão, apague a cópia.
+
+**Backup:**
+
+```bash
+engenheiro backup
+```
+
+```bash
+engenheiro backup --completo --destino /mnt/homelab/backups
+```
+
+- `backup` guarda o que não dá para recriar: perfil, inventário, avaliações,
+  arquivos personalizados, caderno, conversas e o `config.yaml`. É pequeno;
+  rode sempre.
+- `backup --completo` acrescenta livros, índice, cache de extração e rastros.
+  É grande, mas evita reprocessar os livros (a parte que leva noites).
+
+Para restaurar:
+
+```bash
+tar -xzf data/backups/<arquivo>.tar.gz -C <pasta do projeto>
+```
+

@@ -52,14 +52,14 @@ def recuperador(cfg: Config, bco: Banco, emb, bus: Barramento, com_reranker: boo
     if usar:
         r = cfg.busca.reranker
         rr = RerankerCrossEncoder(r.modelo, r.max_tokens, r.dispositivo)
-    glossario = Glossario.carregar(cfg.dados_ref / "glossario.yaml")
+    glossario = Glossario.carregar(cfg.ref("glossario.yaml"))
     return Recuperador(cfg, bco, glossario, emb, rr, bus)
 
 
 def perfil(cfg: Config):
     from engenheiro.perfil import Perfil
 
-    return Perfil(cfg.caminho(cfg.perfil_veiculo))
+    return Perfil(cfg.arquivo_perfil)
 
 
 def caderno(cfg: Config, bco: Banco | None = None, emb=None, bus: Barramento | None = None):
@@ -77,7 +77,7 @@ def caderno(cfg: Config, bco: Banco | None = None, emb=None, bus: Barramento | N
 def registro_ferramentas(cfg: Config, bus: Barramento, cad=None, prf=None):
     from engenheiro.ferramentas import criar_registro
 
-    return criar_registro(cfg.raiz, bus, cad, prf)
+    return criar_registro(cfg.raiz, bus, cad, prf, ref=cfg.ref, inventario=cfg.arquivo_inventario)
 
 
 def engenheiro(cfg: Config, bco: Banco, bus: Barramento, embedder_falso: bool = False, com_reranker: bool | None = None):
@@ -93,8 +93,8 @@ def engenheiro(cfg: Config, bco: Banco, bus: Barramento, embedder_falso: bool = 
     llm = cliente_ollama(cfg)
     emb = embedder(cfg, embedder_falso)
     rec = recuperador(cfg, bco, emb, bus, com_reranker)
-    persona = Persona.carregar(cfg.caminho(cfg.assistente.persona))
-    seg = Seguranca.carregar(cfg.dados_ref / "seguranca.yaml")
+    persona = Persona.carregar(cfg.arquivo_persona)
+    seg = Seguranca.carregar(cfg.ref("seguranca.yaml"))
     prf = perfil(cfg)
     cad = caderno(cfg, bco, emb, bus)
     reg = registro_ferramentas(cfg, bus, cad, prf)
@@ -160,7 +160,7 @@ def servico(cfg: Config, embedder_falso: bool = False):
     # O registro de ferramentas do serviço conhece a telemetria ao vivo.
     from engenheiro.ferramentas import criar_registro
 
-    eng.registro = criar_registro(cfg.raiz, bus, cad, prf, tele)
+    eng.registro = criar_registro(cfg.raiz, bus, cad, prf, tele, ref=cfg.ref, inventario=cfg.arquivo_inventario)
     eng.rec.preaquecer()
     return Servico(eng, prf, cad, cfg.caminho(cfg.caminhos.rastros).parent / "conversas", tele)
 

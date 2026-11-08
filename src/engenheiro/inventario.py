@@ -1,4 +1,4 @@
-"""Inventário de componentes físicos (inventario/componentes.yaml).
+"""Inventário de componentes físicos (seu: data/usuario/inventario.yaml; modelo: modelos/inventario.yaml).
 
 Validação estrita: o engenheiro vai usar este arquivo para saber o que você
 tem antes de propor um circuito. Um status escrito errado ("confirmdo") ou

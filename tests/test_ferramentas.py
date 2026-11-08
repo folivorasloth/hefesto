@@ -47,7 +47,7 @@ def test_notacao_de_resistor():
 
 
 def test_escolher_divisor_usa_valores_do_inventario():
-    valores = el.valores_do_kit(RAIZ / "inventario" / "componentes.yaml")
+    valores = el.valores_do_kit(RAIZ / "modelos" / "inventario.yaml")
     assert len(valores) == 30
     r = el.escolher_divisor(16.0, 3.3, valores)["resultado"]["pares"]
     assert r and all(p["vout_max_pior_caso_v"] <= 3.3 for p in r)

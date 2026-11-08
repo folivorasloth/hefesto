@@ -181,13 +181,13 @@ def status(config: Optional[Path] = OpcConfig, indice: Optional[Path] = OpcIndic
 
 @app.command()
 def avaliar(
-    perguntas: Path = typer.Option(Path("eval/perguntas.yaml"), "--perguntas", help="Arquivo de perguntas"),
+    perguntas: Optional[Path] = typer.Option(None, "--perguntas", help="Arquivo de perguntas (padrão: o seu, data/usuario/avaliacao/perguntas.yaml)"),
     modo: str = typer.Option("recuperacao", help="recuperacao | resposta | conversa | completo | cenarios"),
-    cenarios: Path = typer.Option(Path("eval/cenarios.yaml"), "--cenarios", help="Arquivo de cenários (modo cenarios)"),
+    cenarios: Optional[Path] = typer.Option(None, "--cenarios", help="Arquivo de cenários (padrão: data/usuario/avaliacao/cenarios.yaml)"),
     config: Optional[Path] = OpcConfig,
     indice: Optional[Path] = OpcIndice,
     sem_rerank: bool = typer.Option(False, "--sem-rerank"),
-    saida: Path = typer.Option(Path("eval/relatorios"), "--saida", help="Pasta dos relatórios"),
+    saida: Optional[Path] = typer.Option(None, "--saida", help="Pasta dos relatórios (padrão: data/usuario/avaliacao/relatorios)"),
     falhar_se_piorar: bool = typer.Option(False, "--falhar-se-piorar", help="Sai com erro se algo piorou em relação à execução anterior"),
     embedder_falso: bool = OpcFalso,
 ):
@@ -203,6 +203,10 @@ def avaliar(
         con.print(f"[red]Modo inválido. Use um de: {', '.join(modos)}[/]")
         raise typer.Exit(2)
     cfg = carregar_config(config)
+    # Suas perguntas e relatórios moram em data/usuario/ (criados a partir de eval/ na 1ª vez).
+    perguntas = perguntas or cfg.arquivo_pessoal("avaliacao/perguntas.yaml", "eval/perguntas.yaml")
+    cenarios = cenarios or cfg.arquivo_pessoal("avaliacao/cenarios.yaml", "eval/cenarios.yaml")
+    saida = saida or cfg.pasta_usuario / "avaliacao" / "relatorios"
     sr = False if sem_rerank else None
     arquivo = cenarios if modo == "cenarios" else perguntas
     if modo == "cenarios":
@@ -238,7 +242,7 @@ def avaliar(
                 from engenheiro.perfil import Perfil
 
                 tmp = Path(tempfile.mkdtemp(prefix="hefesto-aval-"))
-                shutil.copy(cfg.caminho(cfg.perfil_veiculo), tmp / "perfil.yaml")
+                shutil.copy(cfg.arquivo_perfil, tmp / "perfil.yaml")
                 return Conversador(eng, Perfil(tmp / "perfil.yaml"), Caderno(tmp / "caderno"), pasta, Sessao.nova())
 
             res = avaliacao.avaliar_cenarios(criar, lista)
@@ -352,14 +356,16 @@ def ver_rastro(
 
 @app.command()
 def inventario(
-    arquivo: Path = typer.Option(Path("inventario/componentes.yaml"), "--arquivo", help="Arquivo do inventário"),
+    arquivo: Optional[Path] = typer.Option(None, "--arquivo", help="Arquivo do inventário (padrão: o seu, em data/usuario/)"),
+    config: Optional[Path] = OpcConfig,
     pendencias: bool = typer.Option(False, "--pendencias", help="Mostra só o que falta confirmar/contar"),
     validar: bool = typer.Option(False, "--validar", help="Só valida o arquivo"),
     projeto: Optional[str] = typer.Option(None, "--projeto", help="Filtra por projeto (hefesto, divine_machinery)"),
 ):
-    """Lista os componentes que você tem (inventario/componentes.yaml)."""
+    """Lista os componentes que você tem (data/usuario/inventario.yaml)."""
     from engenheiro import inventario as inv
 
+    arquivo = arquivo or carregar_config(config).arquivo_inventario
     try:
         dados = inv.carregar(arquivo)
     except inv.InventarioInvalido as e:
@@ -430,7 +436,7 @@ def ver_caderno(
         con.print()
 
 
-perfil_app = typer.Typer(help="Perfil do veículo (perfil_veiculo.yaml)")
+perfil_app = typer.Typer(help="Perfil do veículo (data/usuario/perfil_veiculo.yaml)")
 app.add_typer(perfil_app, name="perfil")
 
 
@@ -682,6 +688,59 @@ def servir(
     finally:
         if cli_mqtt:
             cli_mqtt.parar()
+
+
+# ---------------------------------------------------------------- seus dados
+@app.command()
+def personalizar(
+    arquivo: Optional[str] = typer.Argument(None, help="Ex.: combustiveis, glossario, esp32_pinos, persona"),
+    config: Optional[Path] = OpcConfig,
+):
+    """Copia um arquivo de referência para data/usuario/ para você editar.
+
+    A sua cópia passa a valer no lugar do padrão do projeto, e atualizações
+    do projeto não mexem nela. Para voltar ao padrão, apague a cópia."""
+    import shutil
+
+    cfg = carregar_config(config)
+    candidatos = {p.stem: Path("dados_ref") / p.name for p in sorted(cfg.dados_ref.glob("*.yaml"))}
+    candidatos["persona"] = Path(cfg.assistente.persona)
+    if not arquivo:
+        for nome, rel in candidatos.items():
+            sua = cfg.pasta_usuario / rel
+            estado = f"[green]personalizado[/] ({escape(str(sua))})" if sua.exists() else "[dim]padrão do projeto[/]"
+            con.print(f"  {nome:16} {estado}")
+        con.print("\nUse: engenheiro personalizar <nome>")
+        return
+    rel = candidatos.get(Path(arquivo).stem)
+    if rel is None:
+        con.print(f"[red]Não conheço '{escape(arquivo)}'. Opções: {', '.join(candidatos)}[/]")
+        raise typer.Exit(1)
+    destino = cfg.pasta_usuario / rel
+    if destino.exists():
+        con.print(f"Já personalizado: {escape(str(destino))}")
+        return
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(cfg.raiz / rel, destino)
+    con.print(f"Cópia criada: {escape(str(destino))}\nEdite esse arquivo; ele passa a valer no lugar do padrão.")
+
+
+@app.command()
+def backup(
+    destino: Optional[Path] = typer.Option(None, "--destino", help="Pasta de destino (padrão: data/backups/)"),
+    completo: bool = typer.Option(False, "--completo", help="Inclui livros, índice, cache de extração e rastros (grande)"),
+    config: Optional[Path] = OpcConfig,
+):
+    """Empacota os seus dados (perfil, inventário, caderno, conversas, config)."""
+    from engenheiro.backup import criar_backup
+
+    cfg = carregar_config(config)
+    arquivo, n, avisos = criar_backup(cfg, destino, completo)
+    tamanho = arquivo.stat().st_size / 1e6
+    con.print(f"Backup: {escape(str(arquivo))} ({n} arquivos, {tamanho:.1f} MB)")
+    con.print(f"[dim]Restaurar: tar -xzf {escape(str(arquivo))} -C {escape(str(cfg.raiz))}[/]")
+    for a in avisos:
+        con.print(f"[yellow]{escape(a)}[/]")
 
 
 @app.command("corpus-teste")

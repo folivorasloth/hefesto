@@ -1,4 +1,4 @@
-"""Perfil do veículo (perfil_veiculo.yaml).
+"""Perfil do veículo (seu: data/usuario/perfil_veiculo.yaml; modelo: modelos/perfil_veiculo.yaml).
 
 Duas responsabilidades:
 1. montar o texto que entra no prompt, separando CONFIRMADO de SUPOSIÇÃO de

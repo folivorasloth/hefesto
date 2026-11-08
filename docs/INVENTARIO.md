@@ -1,6 +1,8 @@
 # Inventário de componentes
 
-`componentes.yaml` é a lista única do que existe fisicamente na bancada. Ela
+O seu inventário fica em `data/usuario/inventario.yaml`, criado na primeira
+vez a partir de `modelos/inventario.yaml` (que já traz o que você me passou).
+É a lista única do que existe fisicamente na bancada. Ela
 serve ao Hefesto (telemetria do Gol) e ao Divine Machinery. Toda
 especificação diz de onde veio (`confirmado`, `provavel` ou `a_confirmar`,
 com a `fonte`).
@@ -22,7 +24,7 @@ ou fotografar. O terceiro confere o arquivo depois de editar à mão.
 
 ## Chegou peça nova
 
-Copie um bloco de item no `componentes.yaml` e preencha. Só marque
+Copie um bloco de item no `data/usuario/inventario.yaml` e preencha. Só marque
 `confirmado` o que você viu na peça ou mediu, e diga onde (`fonte`). O que
 veio do anúncio é `provavel`. Rode `engenheiro inventario --validar`.
 
@@ -61,7 +63,7 @@ A foto mostra uma placa DevKit de 38 pinos com módulo estilo WROOM. O chip
    Em versões antigas do esptool, o comando é
    `esptool.py --port /dev/ttyACM0 flash_id`.
 
-4. Copie para o `componentes.yaml` (item `esp32-devkit-38p`) as linhas
+4. Copie para o `data/usuario/inventario.yaml` (item `esp32-devkit-38p`) as linhas
    `Chip is ...` (ou `Chip type: ...`), `Features: ...` e `Detected flash
    size: ...`, e mude o status de `chip` para `confirmado` com
    `fonte: esptool <data>`.

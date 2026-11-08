@@ -80,7 +80,7 @@ def montar(tmp_path):
                        deslocamento_paginas=0)
     b.substituir_documento(d, [Trecho("Um resistor limita a corrente conforme a lei de Ohm.", ["Ohm"], 3, 3,
                                       ["paragrafo"], ["texto"])], ["pt"])
-    perfil = Perfil(RAIZ / "perfil_veiculo.yaml")
+    perfil = Perfil(RAIZ / "modelos" / "perfil_veiculo.yaml")
 
     def criar(llm, busca_web=None, modo_web="pedido"):
         cfg.web.modo = modo_web
@@ -197,7 +197,7 @@ def test_web_fora_do_ar_avisa(montar):
 
 # ------------------------------------------------------------------ perfil
 def test_perfil_separa_confirmado_de_suposicao():
-    txt = Perfil(RAIZ / "perfil_veiculo.yaml").para_prompt()
+    txt = Perfil(RAIZ / "modelos" / "perfil_veiculo.yaml").para_prompt()
     conf, resto = txt.split("SUPOSIÇÃO", 1)
     sup, desconhecido = resto.split("DESCONHECIDO", 1)
     assert "veiculo.motor: AP 1.6" in conf and "etanol" in conf
@@ -217,7 +217,7 @@ def test_ano_do_perfil_nao_e_numero_suspeito(montar):
 
 def test_perfil_definir_grava_historico_e_mantem_comentarios(tmp_path):
     p = tmp_path / "perfil.yaml"
-    p.write_text((RAIZ / "perfil_veiculo.yaml").read_text(encoding="utf-8"), encoding="utf-8")
+    p.write_text((RAIZ / "modelos" / "perfil_veiculo.yaml").read_text(encoding="utf-8"), encoding="utf-8")
     perfil = Perfil(p)
     with pytest.raises(PerfilInvalido, match="fonte"):
         perfil.definir("carburador.modelo", "Weber 460", "confirmado", None)

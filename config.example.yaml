@@ -7,6 +7,9 @@ assistente:
   persona: persona/engenheiro.yaml   # nome, tom e exemplos (edite lá)
 
 caminhos:                 # relativos à pasta deste arquivo
+  # Seus dados (perfil, inventário, avaliação, arquivos personalizados), fora
+  # do git. Criados na primeira vez a partir de modelos/ e eval/.
+  usuario: data/usuario
   biblioteca: data/biblioteca   # uma subpasta por coleção, com os PDFs
   indice: data/indice.sqlite
   cache: data/cache             # extrações do Docling (a parte lenta) ficam aqui
@@ -102,7 +105,6 @@ web:
   modo: pedido
   maximo_resultados: 5
 
-perfil_veiculo: perfil_veiculo.yaml
 
 voz:
   whisper_modelo: small        # tiny/base/small/medium (maior = entende melhor, mais lento)

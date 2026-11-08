@@ -8,6 +8,7 @@ no meio de uma indexação noturna.
 from __future__ import annotations
 
 import os
+import shutil
 from pathlib import Path
 
 import yaml
@@ -21,6 +22,10 @@ class Assistente(BaseModel):
 
 
 class Caminhos(BaseModel):
+    # Seus dados pessoais (perfil do carro, inventário, perguntas e relatórios
+    # de avaliação, arquivos de referência personalizados). Fora do git: as
+    # atualizações do projeto nunca conflitam com eles. Ver `engenheiro backup`.
+    usuario: Path = Path("data/usuario")
     biblioteca: Path = Path("data/biblioteca")
     indice: Path = Path("data/indice.sqlite")
     cache: Path = Path("data/cache")
@@ -206,7 +211,6 @@ class Config(BaseModel):
     voz: Voz = Field(default_factory=Voz)
     api: Api = Field(default_factory=Api)
     mqtt: Mqtt = Field(default_factory=Mqtt)
-    perfil_veiculo: Path = Path("perfil_veiculo.yaml")
 
     # Pasta raiz do projeto (onde fica o config.yaml e dados_ref/).
     raiz: Path = Path(".")
@@ -215,9 +219,48 @@ class Config(BaseModel):
         """Resolve um caminho do config relativo à pasta do config.yaml."""
         return p if p.is_absolute() else (self.raiz / p)
 
+    # ------------------------------------------------------------ seus dados
+    # Dois tipos de arquivo editável:
+    # - PESSOAL (perfil, inventário, perguntas): mora em data/usuario/ e é
+    #   criado na primeira vez a partir do modelo em modelos/ ou eval/;
+    # - REFERÊNCIA (dados_ref/, persona/): o padrão vem do projeto; se existir
+    #   uma cópia sua em data/usuario/<mesmo caminho>, ela vale no lugar.
+    @property
+    def pasta_usuario(self) -> Path:
+        return self.caminho(self.caminhos.usuario)
+
+    def arquivo_pessoal(self, nome: str, modelo: str) -> Path:
+        destino = self.pasta_usuario / nome
+        if not destino.exists():
+            origem = self.raiz / modelo
+            if origem.exists():
+                destino.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(origem, destino)
+        return destino
+
+    def sobreposto(self, relativo: str | Path) -> Path:
+        pessoal = self.pasta_usuario / relativo
+        return pessoal if pessoal.exists() else self.raiz / relativo
+
+    def ref(self, nome: str) -> Path:
+        """Arquivo de dados_ref/ (com a sua cópia valendo, se existir)."""
+        return self.sobreposto(Path("dados_ref") / nome)
+
     @property
     def dados_ref(self) -> Path:
         return self.raiz / "dados_ref"
+
+    @property
+    def arquivo_perfil(self) -> Path:
+        return self.arquivo_pessoal("perfil_veiculo.yaml", "modelos/perfil_veiculo.yaml")
+
+    @property
+    def arquivo_inventario(self) -> Path:
+        return self.arquivo_pessoal("inventario.yaml", "modelos/inventario.yaml")
+
+    @property
+    def arquivo_persona(self) -> Path:
+        return self.sobreposto(self.assistente.persona)
 
 
 def _normalizar_url_ollama(valor: str) -> str:

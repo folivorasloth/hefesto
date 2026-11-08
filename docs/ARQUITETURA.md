@@ -170,12 +170,20 @@ PDF ──Docling──► blocos (título/parágrafo/lista/tabela/figura, com p
 
 Os dados de referência ficam fora do código, em arquivos editáveis:
 `dados_ref/` (glossário, segurança, constantes, combustíveis, pinos do ESP32),
-`perfil_veiculo.yaml`, `persona/`, `inventario/`, `eval/`.
+`persona/`, `eval/`, e os **modelos** dos seus arquivos pessoais em `modelos/`.
+
+**Seus dados nunca ficam no repositório:** o perfil, o inventário, as perguntas
+e os relatórios de avaliação moram em `data/usuario/`, criados a partir dos
+modelos na primeira vez. Um arquivo de referência que você personaliza
+(`engenheiro personalizar`) também vai para `data/usuario/` e passa a valer
+no lugar do padrão. Assim, atualizar o projeto (`git pull`) nunca conflita
+com os seus dados.
 
 ## 7. Dados em disco (`data/`, fora do git)
 
 | Pasta | Conteúdo |
 |---|---|
+| `data/usuario/` | **Seus dados**: perfil, inventário, avaliação, arquivos personalizados |
 | `data/biblioteca/<coleção>/` | Seus PDFs e fichas `.yaml`; o caderno de bordo em `caderno_de_bordo/` |
 | `data/indice.sqlite` | Índice (texto, BM25, vetores) |
 | `data/cache/` | Extrações do Docling (a parte lenta) |
@@ -183,6 +191,7 @@ Os dados de referência ficam fora do código, em arquivos editáveis:
 | `data/rastros/AAAA/MM/` | Um JSON por resposta (auditoria) |
 | `data/conversas/` | Sessões de conversa (memória) |
 | `data/vozes/` | Voz do Piper |
+| `data/backups/` | Backups (`engenheiro backup`) |
 
 ## 8. Concorrência
 

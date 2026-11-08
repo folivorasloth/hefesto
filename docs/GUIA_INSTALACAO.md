@@ -332,7 +332,7 @@ engenheiro avaliar --modo resposta --perguntas eval/perguntas_corpus_teste.yaml 
 - `falso_nao_sei` perto de 0;
 - `segundos_medio`: é o número que diz se a GPU faz falta.
 
-**Me mande o relatório** (`eval/relatorios/*.md`) dessa etapa.
+**Me mande o relatório** (`data/usuario/avaliacao/relatorios/*.md`) dessa etapa.
 
 ### T4. Conversa (modo JARVIS)
 
@@ -488,7 +488,8 @@ E, em até 10 s, pergunte pela API ou pelo MQTT: "qual a rotação agora?".
    engenheiro indexar
    ```
 
-3. Preencha `eval/perguntas.yaml` com perguntas reais. Inclua algumas cuja
+3. Preencha `data/usuario/avaliacao/perguntas.yaml` (criado na primeira
+   avaliação) com perguntas reais. Inclua algumas cuja
    resposta **não** está nos livros.
 4. Rode a avaliação completa:
 
@@ -503,7 +504,7 @@ E, em até 10 s, pergunte pela API ou pelo MQTT: "qual a rotação agora?".
 
 ### O que me mandar de volta
 
-- os relatórios de `eval/relatorios/` (T2, T3, T4 e T8);
+- os relatórios de `data/usuario/avaliacao/relatorios/` (T2, T3, T4 e T8);
 - 2 ou 3 ids de rastro de respostas que pareceram estranhas (o JSON fica em
   `data/rastros/`);
 - quanto tempo cada resposta levou e como foi a voz na garagem.

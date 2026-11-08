@@ -23,14 +23,16 @@ def _yaml(caminho: Path) -> dict:
 
 
 def criar_registro(raiz: Path, barramento: Barramento | None = None, caderno=None, perfil=None,
-                   telemetria=None) -> Registro:
-    """`raiz` é a pasta do projeto (onde ficam dados_ref/ e inventario/)."""
+                   telemetria=None, ref=None, inventario: Path | None = None) -> Registro:
+    """`raiz`: pasta do projeto. `ref(nome)`: caminho de um arquivo de
+    dados_ref/ (o padrão é o do projeto; a fábrica passa a versão que respeita
+    as suas cópias personalizadas). `inventario`: o SEU inventário."""
     reg = Registro(barramento)
-    ref = raiz / "dados_ref"
-    const = _yaml(ref / "constantes.yaml")
-    combustiveis = (_yaml(ref / "combustiveis.yaml")).get("combustiveis", {})
-    inventario = raiz / "inventario" / "componentes.yaml"
-    tabela_pinos = str(ref / "esp32_pinos.yaml")
+    ref = ref or (lambda nome: raiz / "dados_ref" / nome)
+    const = _yaml(ref("constantes.yaml"))
+    combustiveis = (_yaml(ref("combustiveis.yaml"))).get("combustiveis", {})
+    inventario = inventario or raiz / "modelos" / "inventario.yaml"
+    tabela_pinos = str(ref("esp32_pinos.yaml"))
 
     def cfg_motor(nome: str, padrao: int) -> int:
         # Só usa o perfil se o campo estiver CONFIRMADO.
@@ -142,7 +144,7 @@ def criar_registro(raiz: Path, barramento: Barramento | None = None, caderno=Non
             {"id": c.id, "nome": c.nome, "quantidade": c.quantidade,
              "especificacoes": {e.item: f"{e.valor} ({e.status})" for e in c.especificacoes},
              "cuidados": c.cuidados} for c in itens]},
-            "formula": "consulta a inventario/componentes.yaml", "notas": ["(status) indica se o dado foi confirmado."]}
+            "formula": "consulta ao seu inventário (data/usuario/inventario.yaml)", "notas": ["(status) indica se o dado foi confirmado."]}
 
     reg.registrar(Ferramenta(
         "consultar_inventario",
