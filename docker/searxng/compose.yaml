@@ -1,0 +1,18 @@
+# SearXNG para a busca web do engenheiro (roda no homelab, com Docker).
+#   cd docker/searxng
+#   cp settings.example.yml settings.yml   # e troque a secret_key
+#   docker compose up -d
+# Depois, no config.yaml do engenheiro:
+#   web:
+#     searxng_url: "http://<homelab>:8888"
+services:
+  searxng:
+    # Fixe uma versão (tag com data) quando subir pela primeira vez, para
+    # atualizações não mudarem o comportamento sem você saber.
+    image: searxng/searxng:latest
+    container_name: searxng
+    restart: unless-stopped
+    ports:
+      - "8888:8080"
+    volumes:
+      - ./settings.yml:/etc/searxng/settings.yml:ro

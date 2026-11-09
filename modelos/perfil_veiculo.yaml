@@ -1,0 +1,46 @@
+# Perfil do veículo. Entra no contexto de TODA resposta técnica.
+#
+# status:
+#   confirmado  -> você conferiu no carro, no documento ou numa fonte
+#   suposicao   -> provável, mas não conferido: o engenheiro NUNCA trata como fato
+#   a_confirmar -> desconhecido
+#
+# Atualize pela CLI (grava aqui, mantendo o histórico):
+#   engenheiro perfil definir carburador.modelo "Weber 460" --status confirmado --fonte "plaqueta no carburador"
+# ou editando este arquivo à mão.
+
+veiculo:
+  modelo:        {valor: "VW Gol CL", status: confirmado, fonte: proprietário}
+  ano:           {valor: 1994, status: confirmado, fonte: proprietário}
+  motor:         {valor: "AP 1.6", status: confirmado, fonte: proprietário}
+  combustivel:   {valor: "etanol (hidratado, da bomba)", status: confirmado, fonte: proprietário}
+  alimentacao:   {valor: carburado, status: confirmado, fonte: proprietário}
+  cilindros:     {valor: 4, status: confirmado, fonte: "motor AP de 4 cilindros em linha"}
+  tempos:        {valor: 4, status: confirmado, fonte: "motor ciclo Otto de 4 tempos"}
+
+carburador:
+  fabricante:    {valor: Weber, status: suposicao, fonte: proprietário, observacao: "provável; conferir a plaqueta/gravação no corpo"}
+  modelo:        {valor: null, status: a_confirmar, fonte: null, observacao: "ler a gravação no corpo do carburador"}
+
+ignicao:
+  tipo:          {valor: "eletrônica com sensor Hall no distribuidor", status: suposicao, fonte: proprietário, observacao: "conferir: distribuidor com conector de 3 fios indica sensor Hall"}
+  modulo:        {valor: null, status: a_confirmar, fonte: null}
+
+partida_a_frio:
+  existe:        {valor: null, status: a_confirmar, fonte: null, observacao: "carro a etanol carburado costuma ter reservatório de gasolina para partida a frio; conferir no cofre"}
+
+transmissao:
+  relacoes_marchas:   {valor: null, status: a_confirmar, fonte: null, observacao: "lista [1a, 2a, 3a, 4a, 5a]; manual de reparação"}
+  relacao_diferencial: {valor: null, status: a_confirmar, fonte: null}
+
+rodas:
+  pneu:          {valor: null, status: a_confirmar, fonte: null, observacao: "ler na lateral do pneu, ex.: 175/70 R13"}
+
+eletrica:
+  tensao_nominal: {valor: "12 V, negativo no chassi", status: suposicao, fonte: "padrão automotivo", observacao: "conferir com o multímetro (anotar no caderno)"}
+  bateria:       {valor: null, status: a_confirmar, fonte: null, observacao: "ler a etiqueta (Ah e CCA)"}
+
+restricoes:
+  - "Nenhuma modificação permanente no carro. Toda solução tem que ser reversível: adaptadores em T, abraçadeiras, conectores de derivação, chicote removível. Se a única solução for permanente, dizer isso explicitamente e propor alternativas, mesmo piores."
+
+historico: []

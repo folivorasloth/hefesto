@@ -1,0 +1,45 @@
+# Perguntas sobre o corpus FICTÍCIO gerado por `engenheiro corpus-teste`.
+# Servem para validar o pipeline (fase 1) sem depender dos seus livros.
+
+perguntas:
+  - id: teste-torque
+    pergunta: "qual o torque de aperto do cabeçote?"
+    fontes_esperadas:
+      - {arquivo: veiculo/manual_ficticio_gol.pdf, paginas_pdf: [1], secao_contem: "Torques de aperto"}
+    fatos_chave: ["17,3 N·m", "41,7 N·m"]
+  - id: teste-marcha-lenta
+    pergunta: "como regular a marcha lenta?"
+    fontes_esperadas:
+      - {arquivo: veiculo/manual_ficticio_gol.pdf, secao_contem: "marcha lenta"}
+    fatos_chave: ["911 rpm", "local ventilado"]
+    critica: true
+  - id: teste-codigo-peca
+    pergunta: "qual o código de peça do relé 030-905-205?"
+    fontes_esperadas:
+      - {arquivo: veiculo/manual_ficticio_gol.pdf, paginas_pdf: [3]}
+    fatos_chave: ["030-905-205-X"]
+  - id: teste-gpio34
+    pergunta: "o GPIO34 tem pull-up interno?"
+    fontes_esperadas:
+      - {arquivo: esp32/notas_ficticias_esp32.pdf}
+    fatos_chave: ["não tem resistor de pull-up"]
+  - id: teste-hall-ingles
+    pergunta: "como funciona o sensor hall do distribuidor?"
+    fontes_esperadas:
+      - {arquivo: ignicao/fictional_ignition_book.pdf, secao_contem: "Hall effect"}
+    fatos_chave: ["onda quadrada"]
+  - id: teste-bobina-ingles
+    pergunta: "qual a resistência do primário da bobina?"
+    fontes_esperadas:
+      - {arquivo: ignicao/fictional_ignition_book.pdf, secao_contem: "ignition coil"}
+    fatos_chave: ["0.77"]
+    critica: true
+  - id: teste-ocr
+    pergunta: "qual o diâmetro do giclê principal?"
+    fontes_esperadas:
+      - {arquivo: carburacao_etanol/apostila_escaneada_ficticia.pdf}
+    fatos_chave: ["1,37 mm"]
+  - id: teste-fora-da-base
+    pergunta: "qual a pressão do pneu de um caminhão Scania?"
+    fontes_esperadas: []
+    deve_dizer_nao_sei: true

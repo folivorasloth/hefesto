@@ -1,0 +1,162 @@
+# Copie para config.yaml (que fica fora do git) e ajuste.
+# Nenhum endereço de máquina fica no código: tudo vem daqui ou de variáveis
+# de ambiente (OLLAMA_HOST tem prioridade sobre ollama.url).
+
+assistente:
+  id: engenheiro          # identificador técnico (tópicos MQTT, nomes de arquivo)
+  persona: persona/engenheiro.yaml   # nome, tom e exemplos (edite lá)
+
+caminhos:                 # relativos à pasta deste arquivo
+  # Seus dados (perfil, inventário, avaliação, arquivos personalizados), fora
+  # do git. Criados na primeira vez a partir de modelos/ e eval/.
+  usuario: data/usuario
+  biblioteca: data/biblioteca   # uma subpasta por coleção, com os PDFs
+  indice: data/indice.sqlite
+  cache: data/cache             # extrações do Docling (a parte lenta) ficam aqui
+  figuras: data/figuras
+  rastros: data/rastros
+
+ollama:
+  # Um cérebro só: o Ollama neste endereço, com os modelos abaixo.
+  url: http://localhost:11434
+  timeout_s: 900          # CPU é lenta; melhor esperar do que abortar
+  modelos:
+    embeddings: bge-m3
+    rapido: qwen3:4b
+    forte: qwen3:14b
+    visao: qwen2.5vl:7b
+  # Vários cérebros, em ORDEM DE PREFERÊNCIA: a cada pergunta o Hefesto usa o
+  # primeiro que estiver ligado. "modelos" só lista o que muda em relação ao
+  # bloco acima. Exemplo (descomente e troque os endereços):
+  cerebros: []
+  #  - nome: trabalho
+  #    url: http://<IP-NOTEBOOK-TRABALHO>:11434
+  #    modelos: {forte: "qwen3:14b"}
+  #  - nome: ryzen
+  #    url: http://<IP-RYZEN>:11434
+  #    modelos: {forte: "qwen3:8b"}
+  # Onde roda o bge-m3. Recomendado: o homelab (sempre ligado), para a busca
+  # funcionar mesmo com os cérebros desligados. Vazio = primeiro cérebro/url.
+  url_embeddings: ""
+  # Tempo que o Ollama mantém o modelo carregado depois do uso.
+  manter_carregado: "30m"
+
+colecoes:
+  - veiculo
+  - carburacao_etanol
+  - ignicao
+  - eletrica_automotiva
+  - eletronica
+  - mecanica_motor
+  - sensores
+  - esp32
+  - aquisicao_dados
+  - caderno_de_bordo
+
+# Sempre consultadas, independentemente do roteamento.
+colecoes_sempre: [veiculo, caderno_de_bordo]
+
+ingestao:
+  ocr:
+    ativo: true
+    idiomas: [por, eng]           # códigos do Tesseract
+    # Página com menos caracteres que isso na camada de texto é tratada como
+    # escaneada: os trechos dela recebem origem "ocr" (menos confiáveis).
+    limiar_caracteres_pagina: 30
+  figuras:
+    salvar_imagens: true
+    # Lento em CPU (30-90 s por figura). Ao ligar/desligar, os PDFs são
+    # reextraídos (a descrição faz parte do cache de extração).
+    descrever_com_visao: false
+  corte:
+    # Medido em caracteres, não em tokens, para não depender do tokenizer.
+    # ~2400 caracteres ≈ 600-700 tokens, bem abaixo do limite do reranker.
+    max_caracteres: 2400
+    sobreposicao_caracteres: 300
+  embeddings_lote: 16
+
+busca:
+  candidatos_por_lista: 30   # quantos cada busca (BM25 / vetor, por variante) devolve
+  # Quantos vão para o reranker após a fusão. Em CPU cada trecho custa ~1-3 s;
+  # menos = mais rápido, mas a fonte certa pode ficar de fora (a avaliação mede:
+  # fonte_recuperada_mas_cortada_no_rerank). Com GPU, pode subir para 25-30.
+  candidatos_rerank: 15
+  final: 6                   # quantos ficam no fim
+  rrf_k: 60                  # constante do Reciprocal Rank Fusion (60 é o valor do artigo original)
+  roteamento: palavras_chave # "palavras_chave" ou "todas"
+  # Trechos com score do reranker abaixo disso não vão para o LLM; se nenhum
+  # passar, a resposta é "não encontrei". PROVISÓRIO: calibre com o
+  # `engenheiro avaliar` depois de indexar seus livros.
+  limiar_relevancia: 0.10
+  rerank_com_traducao: true   # pontua também pela tradução EN da pergunta
+  reranker:
+    ativo: true
+    modelo: BAAI/bge-reranker-v2-m3
+    max_tokens: 1024
+    dispositivo: cpu
+
+geracao:
+  # O padrão do Ollama é pequeno e corta o começo do prompt SEM aviso quando
+  # ele passa do limite. 12k cabe ~8 trechos + instruções. Mais contexto = mais RAM.
+  num_ctx: 12288
+  temperatura: 0.0
+  # null = padrão do modelo. Para qwen3: false deixa bem mais rápido;
+  # true pode raciocinar melhor. Compare os dois com `engenheiro avaliar`.
+  pensar: null
+  max_trechos_contexto: 8
+
+verificador:
+  ativo: true   # desligar só para depurar; a resposta avisa que não foi verificada
+
+ferramentas:
+  ativo: true
+  max_rodadas: 4      # rodadas de chamadas de ferramenta antes de responder
+
+web:
+  # Seu SearXNG (docker/searxng/). Vazio = sem busca web.
+  searxng_url: ""
+  # pedido: só quando você pede (web, internet, pesquise online...)
+  # sem_fontes: também quando a base não tem nada relevante
+  # nunca: desligada
+  modo: pedido
+  maximo_resultados: 5
+
+
+voz:
+  whisper_modelo: small        # tiny/base/small/medium (maior = entende melhor, mais lento)
+  whisper_compute_type: int8
+  dispositivo: cpu             # "cuda" se um dia tiver GPU NVIDIA
+  piper_voz: data/vozes/pt_BR-faber-medium.onnx
+  velocidade_fala: 1.0         # maior = mais devagar
+  volume: 1.0
+  mumbling: true               # "pensar em voz alta" a partir dos passos reais
+  volume_mumbling: 0.45
+  intervalo_minimo_mumbling_s: 4
+  silencio_fim_fala_ms: 900    # quanto silêncio encerra a sua fala
+  duracao_max_fala_s: 20
+  janela_resposta_s: 8         # depois de uma pergunta dele, ouve sem precisar dizer "Hefesto"
+  agressividade_vad: 2         # 0-3; garagem barulhenta: 2 ou 3
+  ativacao:
+    modo: transcricao          # transcricao | openwakeword | botao
+    palavra: Hefesto
+    modelo_openwakeword: ""    # modelo treinado para "Hefesto" (ver docs/MANUAL.md, seção de voz)
+    limiar_openwakeword: 0.5
+    modelo_whisper_ativacao: tiny
+
+api:
+  host: 0.0.0.0
+  porta: 8765
+  token: ""          # prefira a variável de ambiente HEFESTO_API_TOKEN
+
+mqtt:
+  ativo: true
+  host: ""           # endereço do seu Mosquitto (homelab); vazio = MQTT desligado
+  porta: 1883
+  usuario: ""        # senha na variável de ambiente HEFESTO_MQTT_SENHA
+  qos: 1
+  topico_fala: "npc/{id}/fala"
+  topico_status: "npc/{id}/status"
+  topico_entrada: "joao/fala/{id}"
+  topico_pensamento: "npc/{id}/pensamento"
+  telemetria_prefixo: "carro/telemetria/"
+  telemetria_max_idade_s: 10

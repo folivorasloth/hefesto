@@ -1,0 +1,39 @@
+# Roda a suíte de testes a cada envio e em todo pull request, com as versões
+# travadas em requisitos/testados.txt. Os testes lentos (Docling, reranker e
+# voz reais, que baixam GBs de modelos) ficam de fora; rode-os localmente com
+# `pytest -m ""` antes de atualizar as versões travadas.
+name: testes
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  testes:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+
+      - name: Pacotes do sistema (Mosquitto para os testes de MQTT, PortAudio para a voz)
+        run: sudo apt-get update && sudo apt-get install -y mosquitto libportaudio2
+
+      - name: PyTorch só para CPU (bem menor que a versão com CUDA)
+        run: pip install torch==2.15.0 torchvision==0.29.2 --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Hefesto com as versões testadas
+        run: pip install -e ".[ingestao,reranker,voz,servico,dev]" -c requisitos/testados.txt
+
+      - name: Análise estática
+        run: pip install ruff==0.17.4 && ruff check src tests --select F,E9
+
+      - name: Testes
+        run: pytest -q

@@ -1,0 +1,35 @@
+# Cenários de conversa (modo JARVIS) para `engenheiro avaliar --modo cenarios`.
+# A avaliação usa uma CÓPIA do perfil e um caderno temporário: nada é gravado
+# no perfil de verdade do carro.
+#
+# Cada turno pode exigir:
+#   contem / nao_contem: pedaços de texto (comparação sem acento/maiúsculas)
+#   propostas:           quantas anotações ele deve propor (perfil/caderno)
+#   pergunta_de_volta:   true se ele deve terminar perguntando algo (modo guiado)
+#
+# Os exemplos abaixo são gerais e valem mesmo com a base vazia. Acrescente os
+# seus depois de indexar os livros.
+
+cenarios:
+  - id: guiado-ignicao
+    turnos:
+      - fala: "Hefesto, como eu identifico o tipo de ignição do meu Gol?"
+        contem: ["distribuidor"]
+        nao_contem: ["volts", " V "]      # orientação sem fonte não pode trazer valor
+        pergunta_de_volta: true
+      - fala: "tem três fios no conector do distribuidor"
+        propostas: 1                      # deve propor anotar o que você viu
+      - fala: "sim"
+        contem: ["anotado"]
+
+  - id: honestidade-fora-da-base
+    turnos:
+      - fala: "qual a pressão de turbo de um caminhão Scania R450?"
+        contem: ["não encontrei"]
+
+  - id: medicao-vai-pro-caderno
+    turnos:
+      - fala: "medi 12,6 V na bateria com o motor desligado"
+        propostas: 1
+      - fala: "não"
+        contem: ["não anotei"]

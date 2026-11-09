@@ -1,0 +1,29 @@
+# Constantes usadas pelas ferramentas de cálculo.
+#
+# Só entram aqui valores DEFINIDOS por norma ou convenção (com a fonte). Valores
+# que dependem do livro, do fabricante ou do combustível ficam em arquivos
+# próprios com status "a_confirmar" até você preencher com fonte.
+
+cobre:
+  # Padrão Internacional do Cobre Recozido (IACS, 1913): resistividade de
+  # 1/58 Ω·mm²/m a 20 °C, ou seja ~0,017241 Ω·mm²/m.
+  resistividade_20c_ohm_mm2_por_m: 0.017241
+  # Coeficiente de temperatura do cobre recozido a 20 °C (mesma norma IACS).
+  coef_temperatura_por_c: 0.00393
+  fonte: "IACS - International Annealed Copper Standard (1913); valores reproduzidos na ASTM B193 e em tabelas de cabos"
+
+awg:
+  # Definição do AWG (ASTM B258): diâmetro d(n) = 0,127 mm × 92^((36 − n)/39).
+  # Bitolas 00, 000 e 0000 são n = -1, -2, -3.
+  formula: "d_mm = 0.127 * 92 ** ((36 - n) / 39)"
+  fonte: "ASTM B258 - Standard Specification for Standard Nominal Diameters and Cross-Sectional Areas of AWG Sizes"
+
+fusiveis_lamina:
+  # Valores nominais padronizados de fusíveis automotivos de lâmina (ATO/ATC,
+  # mini). A escolha do valor ainda depende da bitola do fio e da carga.
+  valores_a: [1, 2, 3, 4, 5, 7.5, 10, 15, 20, 25, 30, 35, 40]
+  fonte: "SAE J1284 (fusíveis de lâmina) / catálogos de fabricantes (Littelfuse ATO)"
+  # Regra prática, NÃO norma: fusível >= 125% da corrente contínua da carga
+  # e <= capacidade de corrente do fio. Marcada como regra prática no resultado.
+  fator_regra_pratica: 1.25
+  fonte_regra: "regra prática usual de dimensionamento (fusível a ~80% de carga contínua); confirmar com a norma ou o livro de elétrica automotiva da base"
