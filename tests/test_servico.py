@@ -212,3 +212,91 @@ def test_mqtt_despedida_limpa_deixa_offline_retido(servico, mosquitto):
         ouvinte.esperar(lambda t, d: t == "npc/engenheiro/status" and d["estado"] == "offline")
     finally:
         ouvinte.fechar()
+
+
+# ------------------------------------------------------------------ cliente remoto (voz/texto em outra máquina)
+@pytest.fixture
+def servidor_http(servico):
+    import uvicorn
+
+    from engenheiro.interfaces.api import criar_app
+
+    _, montar = servico
+    svc = montar(LLMConversa(respostas=[GERAL_1, GERAL_2], reescritas=["E agora?"]))
+    porta = _porta_livre()
+    srv = uvicorn.Server(uvicorn.Config(criar_app(svc, token="segredo"), host="127.0.0.1", port=porta, log_level="error"))
+    t = threading.Thread(target=srv.run, daemon=True)
+    t.start()
+    for _ in range(100):
+        if srv.started:
+            break
+        time.sleep(0.05)
+    yield svc, f"http://127.0.0.1:{porta}"
+    srv.should_exit = True
+    t.join(5)
+
+
+def test_cliente_remoto_conversa_com_memoria(servidor_http):
+    from engenheiro.interfaces.remoto import ConversadorRemoto
+
+    svc, url = servidor_http
+    conv = ConversadorRemoto(url, "garagem", token="segredo")
+    assert conv.eng.persona.nome == "Hefesto"
+    r1 = conv.turno("Hefesto, como eu identifico o tipo de ignição?")
+    assert r1.espera_resposta and "distribuidor" in r1.fala and r1.rastro_id
+    r2 = conv.turno("tem 3 fios")
+    assert r2.texto and "api:garagem" in svc._conversas            # mesma conversa no servidor
+    assert "CONFIRMADO" in conv.perfil()
+
+
+def test_cliente_remoto_token_errado_e_servidor_fora():
+    from engenheiro.interfaces.remoto import ConversadorRemoto, ServidorIndisponivel
+
+    with pytest.raises(ServidorIndisponivel):
+        ConversadorRemoto(f"http://127.0.0.1:{_porta_livre()}", token="x")
+
+
+def test_voz_remota_com_mumbling_pelo_mqtt(servico, mosquitto, servidor_http):
+    """O notebook da garagem: voz local, Hefesto no servidor, mumbling via MQTT."""
+    from types import SimpleNamespace
+
+    import numpy as np
+
+    from engenheiro.config import Voz
+    from engenheiro.interfaces.mqtt import ClienteMqtt
+    from engenheiro.interfaces.remoto import ConversadorRemoto, assinar_pensamentos
+    from engenheiro.voz.orquestrador import LoopVoz
+
+    svc, url = servidor_http
+    pub = ClienteMqtt(svc, "127.0.0.1", mosquitto)     # o servidor publica o pensamento
+    pub.iniciar()
+    assert pub.conectado.wait(10)
+    conv = ConversadorRemoto(url, "garagem", token="segredo")
+    ditos = []
+
+    class Sint:
+        def frases(self, texto):
+            ditos.append(texto)
+            yield np.zeros(10, dtype=np.int16), 16000
+
+    falante = SimpleNamespace(tocando=False, tocar=lambda a, t, volume=1.0: True, parar=lambda: None)
+    ativ = SimpleNamespace(esperar=lambda q, continuar=lambda: True: None)   # ninguém interrompe
+    loop = LoopVoz(conv, SimpleNamespace(quadros=lambda: iter(())), falante, Sint(), SimpleNamespace(transcrever=lambda a: ""),
+                   ativ, SimpleNamespace(proxima_fala=lambda *a, **k: None), Voz(intervalo_minimo_mumbling_s=0))
+    sub = assinar_pensamentos("127.0.0.1", mosquitto, "npc/engenheiro/pensamento", loop.receber_murmurio)
+    try:
+        time.sleep(1.0)                                  # assinatura confirmada no broker
+        lento = svc.eng.llm.chat
+
+        def chat_lento(*a, **k):                         # o servidor "pensando" um pouco
+            time.sleep(0.4)
+            return lento(*a, **k)
+
+        svc.eng.llm.chat = chat_lento
+        loop.atender("onde fica o distribuidor?", iter(()))
+        assert ditos[-1].endswith("Quantos fios entram no conector do distribuidor?")
+        assert any(d.startswith("Deixa eu ver") or d.startswith("Vou olhar") for d in ditos[:-1]), ditos
+    finally:
+        sub.loop_stop()
+        sub.disconnect()
+        pub.parar()

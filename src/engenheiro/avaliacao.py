@@ -199,6 +199,8 @@ def avaliar_respostas(eng, perguntas: list[Pergunta], pasta_rastros: Path, conve
             "deve_dizer_nao_sei": p.deve_dizer_nao_sei,
             "critica": p.critica,
             "modelo": (r.get("escolha_modelo") or {}).get("nivel"),
+            "cerebro": (r.get("cerebro") or {}).get("nome"),
+            "modelo_forte": (r.get("cerebro") or {}).get("forte"),
             "encontrou": resp.encontrou,
             "sem_llm": bool(r.get("sem_llm")),
             "fontes_exibidas": len(exibidas_fonte),
@@ -309,6 +311,7 @@ def _max(v):
 def resumo_config(cfg: Config, extra: dict) -> dict:
     return {
         "modelos": cfg.ollama.modelos.model_dump(),
+        "cerebros": [{"nome": c.nome, "url": c.url, "modelos": c.modelos} for c in cfg.ollama.cerebros],
         "corte": cfg.ingestao.corte.model_dump(),
         "busca": cfg.busca.model_dump(),
         **extra,
@@ -368,13 +371,14 @@ def _markdown(r: dict) -> str:
         linhas += ["", f"Comparado com {comp['execucao_anterior']}.",
                    f"- Melhoraram: {', '.join(comp['melhoraram']) or 'nenhuma'}",
                    f"- **Pioraram: {', '.join(comp['pioraram']) or 'nenhuma'}**"]
-    if r["modo"] == "cenarios":
+    modo_base = r["modo"].split("-")[0]   # "completo-ryzen" -> "completo"
+    if modo_base == "cenarios":
         linhas += ["", "## Por cenário", "", "| id | ok | turnos | s/turno | falhas |", "|---|---|---|---|---|"]
         for i in r["itens"]:
             linhas.append(f"| {i['id']} | {'sim' if i['ok'] else '**não**'} | {i['turnos']} | {i['segundos_por_turno']} | "
                           f"{'; '.join(i['falhas']) or '—'} |")
         return "\n".join(linhas) + "\n"
-    if r["modo"] in ("resposta", "conversa", "completo"):
+    if modo_base in ("resposta", "conversa", "completo"):
         linhas += ["", "## Por pergunta", "",
                    "| id | esperado | encontrou | modelo | fontes ok | fonte certa | removidas | fatos | críticos | s | rastro |",
                    "|---|---|---|---|---|---|---|---|---|---|---|"]
@@ -385,7 +389,8 @@ def _markdown(r: dict) -> str:
             if rec is not None:
                 certa += f" (busca: {'sim' if rec['acertou'] else 'não'})"
             linhas.append(
-                f"| {i['id']} | {esperado} | {'sim' if i['encontrou'] else 'não'} | {i.get('modelo') or '—'} | "
+                f"| {i['id']} | {esperado} | {'sim' if i['encontrou'] else 'não'} | "
+                f"{i.get('modelo') or '—'}{(' · ' + i['cerebro'] + ' ' + (i.get('modelo_forte') or '')) if i.get('cerebro') else ''} | "
                 f"{i['fontes_aprovadas']}/{i['fontes_exibidas']} | {certa} | {i['removidas']} | "
                 f"{len(i['fatos_encontrados'])}/{len(i['fatos_esperados'])} | {len(i['problemas_criticos'])} | "
                 f"{i['segundos']} | `{i['rastro']}` |"
@@ -415,3 +420,30 @@ def avaliar_completo(eng, perguntas: list[Pergunta], pasta_rastros: Path, k: int
     metricas = {**{f"busca.{k_}": v for k_, v in rec["metricas"].items()},
                 **{f"resposta.{k_}": v for k_, v in resp["metricas"].items()}}
     return {"metricas": metricas, "itens": resp["itens"]}
+
+
+def comparar_relatorios(a: dict, b: dict) -> dict:
+    """Compara dois relatórios (ex.: o mesmo conjunto de perguntas com o 8B e
+    com o 14B). Devolve as métricas lado a lado e as perguntas que um acertou
+    e o outro não."""
+    def ok(i: dict) -> bool:
+        if "ok" in i:
+            return i["ok"]
+        if "acertou" in i:
+            return i["acertou"]
+        return (not i["encontrou"]) if i["deve_dizer_nao_sei"] else i["encontrou"]
+
+    metricas = []
+    for k in dict.fromkeys(list(a["metricas"]) + list(b["metricas"])):
+        va, vb = a["metricas"].get(k), b["metricas"].get(k)
+        delta = round(vb - va, 4) if isinstance(va, (int, float)) and isinstance(vb, (int, float)) else None
+        metricas.append({"metrica": k, "a": va, "b": vb, "delta": delta})
+    ia = {i["id"]: ok(i) for i in a["itens"]}
+    ib = {i["id"]: ok(i) for i in b["itens"]}
+    comuns = sorted(set(ia) & set(ib))
+    return {
+        "metricas": metricas,
+        "so_a_acertou": [i for i in comuns if ia[i] and not ib[i]],
+        "so_b_acertou": [i for i in comuns if ib[i] and not ia[i]],
+        "perguntas_em_comum": len(comuns),
+    }

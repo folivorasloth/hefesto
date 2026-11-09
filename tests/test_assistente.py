@@ -340,7 +340,7 @@ def test_volta_sozinho_quando_o_ollama_liga(ambiente):
     cli = ClienteQueLiga(
         resposta={"encontrou": False, "falta": "x", "sugestoes": [], "afirmacoes": []}, verificacao={"avaliacoes": []})
     eng = criar(cli)
-    eng._INTERVALO_CHECAGEM_S = 0
+    eng.cerebros.intervalo_s = 0
     assert "sem o modelo de linguagem" in eng.responder("Qual o torque do cabeçote?").texto
     cli.ligado = True                     # o notebook do LLM ligou
     assert "sem o modelo de linguagem" not in eng.responder("Qual o torque do cabeçote?").texto

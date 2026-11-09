@@ -43,7 +43,7 @@ você descobre, sempre com a sua confirmação.
 | Comando | O que faz |
 |---|---|
 | `engenheiro conversar` | Conversa por texto, com memória e modo guiado |
-| `engenheiro voz` | Conversa por voz ("Hefesto, ...", ou `--botao`) |
+| `engenheiro voz` | Conversa por voz ("Hefesto, ...", ou `--botao`); `--servidor` usa o Hefesto de outra máquina |
 | `engenheiro perguntar "..."` | Pergunta avulsa |
 | `engenheiro rastro <id>` | Por que ele respondeu o que respondeu |
 | `engenheiro indexar` | Indexa os livros de `data/biblioteca/` (incremental) |
@@ -53,8 +53,9 @@ você descobre, sempre com a sua confirmação.
 | `engenheiro perfil` / `perfil definir` | O que ele sabe do carro (confirmado × suposição) |
 | `engenheiro inventario` | O que você tem na bancada |
 | `engenheiro servir` | API HTTP + MQTT (Divine Machinery) |
-| `engenheiro avaliar --modo ...` | Mede a qualidade e compara com a execução anterior |
-| `engenheiro status` | Ollama, modelos e índice |
+| `engenheiro avaliar --modo ...` | Mede a qualidade e compara com a execução anterior (`--cerebro` escolhe a máquina) |
+| `engenheiro comparar-relatorios A B` | Duas avaliações lado a lado (ex.: 8B × 14B) |
+| `engenheiro status` | Cérebros (máquinas com Ollama), embeddings, modelos e índice |
 | `engenheiro personalizar` / `backup` | Ajustar arquivos de referência; guardar os seus dados |
 
 ## Estado
@@ -69,7 +70,7 @@ você descobre, sempre com a sua confirmação.
 | 5 | Voz: ativação, Whisper, Piper, mumbling, interrupção, modo dirigindo | pronta |
 | 6 | API HTTP, MQTT com Last Will, telemetria ao vivo | pronta |
 
-Os 197 testes automáticos passam, inclusive os que rodam Docling, reranker,
+Os 206 testes automáticos passam, inclusive os que rodam Docling, reranker,
 voz e Mosquitto de verdade, numa instalação do zero em Python 3.12 com as
 versões travadas em `requisitos/testados.txt`. O GitHub roda os testes a cada
 envio (Python 3.12 e 3.13). O que ainda falta validar na sua máquina, com o

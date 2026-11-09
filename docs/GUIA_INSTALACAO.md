@@ -22,6 +22,82 @@ testado; a voz pelo WSL exige configuração de áudio à parte).
 
 ---
 
+## Sua divisão de máquinas (recomendada)
+
+| Máquina | Papel | O que instalar |
+|---|---|---|
+| **Homelab** (i5-4670, 16 GB, SSD 500 GB + HD 2 TB), 24 h | **Base**: serviço do Hefesto (API + MQTT), livros, índice, caderno, perfil, Mosquitto, SearXNG, leitura de PDF de madrugada, backups no HD | Parte 1 com **só o `bge-m3`**; Parte 2 (sem o extra `voz`); Partes 3 e 5 |
+| **Notebook do trabalho** (i5-1334U, 16 GB), enquanto você o tiver | **Cérebro preferido**: `qwen3:14b` + `qwen3:4b` | Só a Parte 1 (Ollama). Nada seu fica nele |
+| **Ryzen 7 5700U** (12 GB; até 20 GB) | **Cérebro reserva/definitivo** (`qwen3:8b`; `qwen3:14b` depois do upgrade para 20 GB) e **voz na garagem** | Parte 1 (Ollama) e Parte 2 só com os extras `voz,servico` |
+
+Como as peças conversam:
+- O serviço no homelab usa o primeiro cérebro que estiver ligado, nessa
+  ordem: notebook do trabalho, depois o Ryzen.
+- A busca semântica usa o `bge-m3` do próprio homelab, então funciona com os
+  dois notebooks desligados.
+- Na garagem, o Ryzen só ouve e fala (`engenheiro voz --servidor`): livros,
+  índice e memória ficam no homelab.
+
+No `config.yaml` **do homelab**:
+
+```yaml
+ollama:
+  url_embeddings: http://localhost:11434      # o Ollama do próprio homelab, com o bge-m3
+  cerebros:                                   # ordem = preferência
+    - nome: trabalho
+      url: http://<IP-NOTEBOOK-TRABALHO>:11434
+      modelos: {forte: "qwen3:14b"}
+    - nome: ryzen
+      url: http://<IP-RYZEN>:11434
+      modelos: {forte: "qwen3:8b"}            # "qwen3:14b" depois do upgrade de RAM
+mqtt:
+  host: "localhost"
+```
+
+No dia em que você sair da empresa, apague o bloco `trabalho` e desinstale o
+Ollama do notebook. Nenhum dado seu fica lá.
+
+Na **garagem** (Ryzen), o Hefesto não precisa de índice nem de livros. O
+`config.yaml` de lá só precisa do MQTT, para o "pensar em voz alta":
+
+```yaml
+mqtt:
+  host: "<IP-DO-HOMELAB>"
+```
+
+E a conversa por voz aponta para o homelab:
+
+```bash
+engenheiro voz --servidor http://<IP-DO-HOMELAB>:8765
+```
+
+Para conversar por texto, de qualquer máquina:
+
+```bash
+engenheiro conversar --servidor http://<IP-DO-HOMELAB>:8765
+```
+
+**Decidir entre 8B e 14B com dados**, enquanto você ainda tem o notebook do
+trabalho:
+
+```bash
+engenheiro avaliar --modo completo --cerebro trabalho
+```
+
+```bash
+engenheiro avaliar --modo completo --cerebro ryzen
+```
+
+```bash
+engenheiro comparar-relatorios <relatorio-ryzen>.json <relatorio-trabalho>.json
+```
+
+Se o 14B acertar claramente mais, vale o upgrade do Ryzen para 20 GB (troque o
+pente de 8 GB por um de 16 GB DDR4-3200 SODIMM) antes de sair da empresa. Se
+empatar, o Ryzen como está basta.
+
+---
+
 ## Parte 1: notebook do LLM (Ollama)
 
 ### 1.1 Instalar o Ollama
@@ -283,7 +359,7 @@ apareceu e o id do rastro, quando houver.
 pytest
 ```
 
-✅ Cerca de 180 testes passando. Os de MQTT rodam se o `mosquitto` estiver
+✅ Cerca de 190 testes passando. Os de MQTT rodam se o `mosquitto` estiver
 instalado na máquina (`sudo apt install mosquitto` só para o teste; não
 precisa deixar o serviço ativo). Senão, são pulados.
 
@@ -293,7 +369,7 @@ Testes lentos (Docling, reranker, voz reais; baixam modelos na primeira vez):
 HEFESTO_VOZ_TESTE=data/vozes/pt_BR-faber-medium.onnx pytest -m ""
 ```
 
-✅ Cerca de 197 testes passando.
+✅ Cerca de 206 testes passando.
 
 ### T2. Busca no corpus de teste (sem LLM)
 
@@ -606,6 +682,36 @@ avaliações e config. De vez em quando, rode também `engenheiro backup
 
 ---
 
+## Parte 6: velocidade
+
+Em ordem de efeito, do maior para o menor:
+
+1. **GPU** (veja a conversa sobre hardware): leva cada resposta de minutos para
+   dezenas de segundos. É o único salto grande.
+2. **Modelo mantido na memória:** o Hefesto já pede ao Ollama que mantenha o
+   modelo carregado por 30 minutos (`ollama.manter_carregado`). No notebook do
+   cérebro, use também `OLLAMA_KEEP_ALIVE=30m` (Parte 1.2). Recarregar um 14B do
+   disco leva dezenas de segundos.
+3. **Modelos no SSD,** nunca no HD.
+4. **`geracao.pensar: false`** no config, para o qwen3: menos texto gerado antes
+   da resposta.
+5. **Opções do Ollama para testar** (no `systemctl edit ollama`, como na Parte
+   1.2). Cada uma pode ajudar ou não, conforme a máquina: meça antes e depois
+   com `engenheiro avaliar`.
+   - `Environment="OLLAMA_FLASH_ATTENTION=1"`
+   - `Environment="OLLAMA_KV_CACHE_TYPE=q8_0"` (o contexto ocupa metade da
+     memória; só funciona junto com a anterior)
+6. **Menos candidatos no reranker** (`busca.candidatos_rerank`): o padrão de 15
+   já é enxuto. Abaixo disso, confira na avaliação se a fonte certa não está
+   ficando de fora (`fonte_recuperada_mas_cortada_no_rerank`).
+7. **Modo conversa:** pergunta de orientação ("onde fica", "como identifico")
+   já vai para o modelo rápido, sem etapa de ferramentas.
+
+O que **não** muda: o verificador e a checagem de números rodam sempre. Velocidade
+nunca é comprada com uma resposta menos conferida.
+
+---
+
 ## Solução de problemas
 
 | Sintoma | Causa provável | O que fazer |
@@ -617,7 +723,7 @@ avaliações e config. De vez em quando, rode também `engenheiro backup
 | Resposta "sem o modelo de linguagem" | Ollama fora agora | Ele volta sozinho quando o Ollama responder |
 | Tudo vira "não encontrei" | Limiar alto demais ou base sem o assunto | `engenheiro buscar "..." --candidatos` para ver os scores; ajuste o limiar |
 | `O prompt pode ter sido truncado` | Contexto maior que `num_ctx` | Aumente `geracao.num_ctx` (gasta mais RAM) ou reduza `max_trechos_contexto` |
-| Respostas muito lentas | CPU | `geracao.pensar: false`; menos `busca.candidatos_rerank`; ou GPU |
+| Respostas muito lentas | CPU | Parte 6 |
 | Voz não ouve nada | Microfone padrão errado ou VAD agressivo | `engenheiro audio ouvir`; `voz.agressividade_vad: 1` |
 | Voz dispara com barulho | VAD sensível | `voz.agressividade_vad: 3`, ou `engenheiro voz --botao` |
 | SearXNG `403` | JSON desabilitado | `search.formats: [html, json]` no `settings.yml` |

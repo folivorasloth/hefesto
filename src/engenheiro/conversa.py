@@ -206,11 +206,15 @@ class Conversador:
     def llm(self):
         return self.eng.llm
 
+    def nova_conversa(self) -> str:
+        self.sessao = Sessao.nova()
+        return self.sessao.id
+
     def _rapido(self, sistema: str, usuario: str, esquema: dict) -> dict | None:
         if self.llm is None:
             return None
         try:
-            r = self.llm.chat(self.eng.cfg.ollama.modelos.rapido,
+            r = self.llm.chat(self.eng.modelos.rapido,
                               [{"role": "system", "content": sistema}, {"role": "user", "content": usuario}],
                               formato=esquema, opcoes={"temperature": 0}, pensar=self.eng.cfg.geracao.pensar)
             return json.loads(r["conteudo"])

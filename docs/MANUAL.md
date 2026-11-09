@@ -179,6 +179,17 @@ transcrição, dizendo se reconheceu "Hefesto". Depois, ligue:
 engenheiro voz
 ```
 
+**Com o Hefesto rodando em outra máquina** (ex.: o serviço no homelab), o
+notebook da garagem só ouve e fala, sem índice nem livros:
+
+```bash
+engenheiro voz --servidor http://<IP-DO-HOMELAB>:8765
+```
+
+Para o "pensar em voz alta" chegar no modo remoto, ponha `mqtt.host` no
+`config.yaml` da garagem. O mesmo vale para o chat de texto:
+`engenheiro conversar --servidor ...`.
+
 Para usar só o botão de falar (Enter), que é o mais confiável com barulho:
 
 ```bash
@@ -538,7 +549,7 @@ com `score_rerank_max_fora_da_base`, no modo `recuperacao`.
 pytest
 ```
 
-Esse comando roda os testes rápidos (cerca de 180, alguns segundos). Eles
+Esse comando roda os testes rápidos (cerca de 190, alguns segundos). Eles
 cobrem:
 - chunker, busca, citações e indexação incremental;
 - todas as ferramentas de cálculo, com valores conferíveis à mão;

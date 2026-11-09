@@ -15,8 +15,25 @@ from engenheiro.recuperacao.reranker import RerankerCrossEncoder
 from engenheiro.store.db import Banco
 
 
-def cliente_ollama(cfg: Config) -> ClienteOllama:
-    return ClienteOllama(cfg.ollama.url, cfg.ollama.timeout_s)
+def cliente_ollama(cfg: Config, url: str | None = None) -> ClienteOllama:
+    return ClienteOllama(url or cfg.ollama.url, cfg.ollama.timeout_s, cfg.ollama.manter_carregado or None)
+
+
+def cerebros(cfg: Config):
+    """Os cérebros configurados, em ordem de preferência (ou um só, em ollama.url)."""
+    from engenheiro.config import ModelosOllama
+    from engenheiro.llm.cerebros import Cerebro, Cerebros
+
+    base = cfg.ollama.modelos.model_dump()
+    lista = [Cerebro(c.nome, cliente_ollama(cfg, c.url), ModelosOllama(**{**base, **c.modelos}))
+             for c in cfg.ollama.cerebros]
+    return Cerebros(lista or [Cerebro("principal", cliente_ollama(cfg), cfg.ollama.modelos)])
+
+
+def url_embeddings(cfg: Config) -> str:
+    if cfg.ollama.url_embeddings:
+        return cfg.ollama.url_embeddings
+    return cfg.ollama.cerebros[0].url if cfg.ollama.cerebros else cfg.ollama.url
 
 
 def embedder(cfg: Config, falso: bool = False):
@@ -24,7 +41,9 @@ def embedder(cfg: Config, falso: bool = False):
         from engenheiro.dev.embedder_falso import EmbedderFalso
 
         return EmbedderFalso()
-    return EmbedderOllama(cliente_ollama(cfg), cfg.ollama.modelos.embeddings)
+    # O bge-m3 pode morar numa máquina diferente dos cérebros (o homelab,
+    # sempre ligado): a busca semântica funciona mesmo com eles desligados.
+    return EmbedderOllama(cliente_ollama(cfg, url_embeddings(cfg)), cfg.ollama.modelos.embeddings)
 
 
 def banco(cfg: Config, indice: Path | None = None) -> Banco:
@@ -88,9 +107,9 @@ def engenheiro(cfg: Config, bco: Banco, bus: Barramento, embedder_falso: bool = 
     from engenheiro.persona import Persona
     from engenheiro.seguranca import Seguranca
 
-    # O cliente e o embedder existem sempre: se o Ollama estiver fora agora,
+    # Os cérebros e o embedder existem sempre: se o Ollama estiver fora agora,
     # cada pergunta percebe isso (e volta a usá-lo quando ele ligar).
-    llm = cliente_ollama(cfg)
+    llm = cerebros(cfg)
     emb = embedder(cfg, embedder_falso)
     rec = recuperador(cfg, bco, emb, bus, com_reranker)
     persona = Persona.carregar(cfg.arquivo_persona)
@@ -141,7 +160,9 @@ def loop_voz(cfg: Config, conv, modo_ativacao: str | None = None, dirigindo: boo
     else:
         raise ValueError(f"voz.ativacao.modo inválido: {modo} (transcricao | openwakeword | botao)")
     sint = Sintetizador(cfg.caminho(v.piper_voz), v.velocidade_fala)
-    conv.eng.rec.preaquecer()
+    rec_local = getattr(getattr(conv, "eng", None), "rec", None)
+    if rec_local is not None:            # cliente remoto não tem busca local
+        rec_local.preaquecer()
     return LoopVoz(conv, MicrofoneSD(), AltoFalanteSD(), sint, stt, ativ, rec, v, dirigindo, mostrar)
 
 

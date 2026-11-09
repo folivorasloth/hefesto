@@ -50,9 +50,11 @@ def normalizar(v: list[float]) -> list[float]:
 
 
 class ClienteOllama:
-    def __init__(self, url: str, timeout_s: float = 900) -> None:
+    def __init__(self, url: str, timeout_s: float = 900, manter_carregado: str | None = None) -> None:
         self.url = url.rstrip("/")
         self.timeout = timeout_s
+        # keep_alive do Ollama: evita descarregar e recarregar o modelo entre perguntas.
+        self.manter_carregado = manter_carregado
 
     def _post(self, caminho: str, corpo: dict) -> dict:
         try:
@@ -76,7 +78,10 @@ class ClienteOllama:
             return []
 
     def embed(self, modelo: str, textos: list[str]) -> list[list[float]]:
-        dados = self._post("/api/embed", {"model": modelo, "input": textos})
+        corpo = {"model": modelo, "input": textos}
+        if self.manter_carregado:
+            corpo["keep_alive"] = self.manter_carregado
+        dados = self._post("/api/embed", corpo)
         return dados["embeddings"]
 
     def chat(
@@ -105,6 +110,8 @@ class ClienteOllama:
             corpo["think"] = pensar
         if ferramentas:
             corpo["tools"] = ferramentas
+        if self.manter_carregado:
+            corpo["keep_alive"] = self.manter_carregado
         d = self._post("/api/chat", corpo)
         metricas = {k: d.get(k) for k in ("total_duration", "prompt_eval_count", "eval_count", "done_reason")}
         chamadas = [

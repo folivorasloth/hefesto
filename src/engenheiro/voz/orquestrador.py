@@ -52,6 +52,11 @@ class LoopVoz:
             self.mumbler = Mumbler(self._murmurios.put, cfg_voz.intervalo_minimo_mumbling_s)
             self.conv.eng.bus.assinar(self.mumbler)
 
+    def receber_murmurio(self, texto: str) -> None:
+        """Mumbling vindo de fora (ex.: do servidor, pelo MQTT, no modo remoto)."""
+        if texto and self.cfg.mumbling and not self.dirigindo:
+            self._murmurios.put(texto)
+
     # ------------------------------------------------------------ fala
     def falar(self, texto: str, volume: float | None = None, continuar: Callable[[], bool] = lambda: True) -> bool:
         """Fala frase a frase. False = interrompida."""
@@ -105,9 +110,7 @@ class LoopVoz:
             self.guardadas = []
             return texto
         if _RE_NOVA.search(n):
-            from engenheiro.conversa import Sessao
-
-            self.conv.sessao = Sessao.nova()
+            self.conv.nova_conversa()
             return "Certo, assunto novo."
         return None
 
@@ -121,6 +124,7 @@ class LoopVoz:
                 self.falar(comando)
                 return
 
+            self._esvaziar_murmurios()
             resultado: list = []
             erro: list = []
 

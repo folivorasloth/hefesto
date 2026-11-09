@@ -145,6 +145,10 @@ PDF ──Docling──► blocos (título/parágrafo/lista/tabela/figura, com p
 | Ativação da voz por transcrição | Funciona sem treinar nada; o openWakeWord só tem palavras em inglês prontas |
 | Interrupção só pela palavra ou pelo botão | Sem cancelamento de eco, a própria fala do Hefesto o interromperia |
 | `llm` conferido a cada pergunta | O Hefesto "acorda" sozinho quando o notebook do LLM liga |
+| Vários cérebros, escolha fixa por resposta | O projeto não depende de uma máquina (o notebook do trabalho entra e sai pela config); uma resposta nunca mistura modelos de máquinas diferentes, e o rastro diz qual respondeu |
+| Embeddings em endereço próprio | O `bge-m3` no homelab (sempre ligado) mantém a busca semântica funcionando com os cérebros desligados |
+| Cliente remoto de voz | O notebook da garagem só ouve e fala; livros, índice e memória ficam num lugar só, sem cópias |
+| `keep_alive` do Ollama em cada pedido | Evita recarregar o modelo do disco entre perguntas (dezenas de segundos para um 14B em CPU) |
 
 ## 6. Mapa do código (`src/engenheiro/`)
 
@@ -154,7 +158,7 @@ PDF ──Docling──► blocos (título/parágrafo/lista/tabela/figura, com p
 | `ingest/` | `extrator` (Docling/OCR/figuras), `chunker`, `idioma`, `indexador` (incremental) |
 | `store/` | Esquema SQLite, `db` (documentos, trechos, vetores), `busca_hibrida` (BM25, vetor, RRF) |
 | `recuperacao/` | `reescrita` (glossário, roteamento), `reranker`, `pipeline` (busca completa com scores) |
-| `llm/` | `ollama` (cliente HTTP: chat, JSON, tools, embeddings), `selecao` (rápido/forte) |
+| `llm/` | `ollama` (cliente HTTP: chat, JSON, tools, embeddings), `selecao` (rápido/forte), `cerebros` (várias máquinas em ordem de preferência) |
 | `geracao/` | `prompts`, `esquemas`, `gerador` (contexto e chamada), `montagem` (texto e fala) |
 | `verificador/` | `numeros` (valor + unidade), `verificador` (citações, LLM, regras) |
 | `ferramentas/` | `base` (registro/validação), `eletrica`, `motor`, `unidades`, `esp32`, `etapa` (tool calling) |
@@ -164,7 +168,7 @@ PDF ──Docling──► blocos (título/parágrafo/lista/tabela/figura, com p
 | `seguranca.py`, `persona.py` | Avisos determinísticos; persona |
 | `web.py`, `telemetria.py` | SearXNG; cache da telemetria ao vivo |
 | `voz/` | `audio`, `vad`, `stt_tts`, `ativacao`, `mumbling`, `orquestrador` |
-| `servico.py`, `interfaces/` | Núcleo do serviço; `cli`, `api` (FastAPI), `mqtt` (paho) |
+| `servico.py`, `interfaces/` | Núcleo do serviço; `cli`, `api` (FastAPI), `mqtt` (paho), `remoto` (voz/texto usando o serviço de outra máquina) |
 | `eventos.py`, `rastro.py` | Barramento de eventos (rastro e mumbling); gravação do rastro |
 | `avaliacao.py` | Avaliação de busca, respostas e cenários; relatórios comparáveis |
 

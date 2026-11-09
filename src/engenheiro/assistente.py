@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import json
 import re
-import time
 
 import httpx
 from dataclasses import asdict, dataclass, field
@@ -78,34 +77,43 @@ class Engenheiro:
         self.perfil_valores = perfil_valores
         self.busca_web = busca_web
 
-    # O cliente do Ollama fica guardado sempre; `llm` só o devolve se ele
-    # estiver respondendo AGORA. Assim, se o notebook do LLM estava desligado
-    # quando o serviço subiu, o Hefesto "acorda" sozinho quando ele liga,
-    # sem reiniciar. A checagem é guardada por alguns segundos para não
-    # consultar o Ollama a cada uso dentro da mesma resposta.
-    _INTERVALO_CHECAGEM_S = 15.0
-
+    # ------------------------------------------------------------ cérebros
+    # `llm` aceita um cliente só (como antes) ou um objeto Cerebros (várias
+    # máquinas em ordem de preferência). Em ambos os casos, `llm` só devolve
+    # um cliente que esteja respondendo AGORA: se o notebook estava desligado
+    # quando o serviço subiu, o Hefesto "acorda" sozinho quando ele liga.
+    # Durante uma resposta, o cérebro escolhido fica FIXO (ver responder).
     @property
     def llm(self):
-        c = self._cliente
-        disponivel = getattr(c, "disponivel", None)
-        if c is None or disponivel is None:
-            return c
-        agora = time.monotonic()
-        if agora - self._ultima_checagem > self._INTERVALO_CHECAGEM_S:
-            self._ultimo_estado = bool(disponivel())
-            self._ultima_checagem = agora
-        return c if self._ultimo_estado else None
+        c = self.cerebro
+        return c.cliente if c is not None else None
 
     @llm.setter
-    def llm(self, cliente) -> None:
-        self._cliente = cliente
-        self._ultima_checagem = -1e9
-        self._ultimo_estado = False
+    def llm(self, valor) -> None:
+        from engenheiro.llm.cerebros import Cerebro, Cerebros
+
+        if valor is None:
+            self.cerebros = None
+        elif isinstance(valor, Cerebros):
+            self.cerebros = valor
+        else:
+            self.cerebros = Cerebros([Cerebro("principal", valor, self.cfg.ollama.modelos)])
+        self._fixado = None
 
     @property
-    def _modelos(self):
-        return self.cfg.ollama.modelos
+    def cerebro(self):
+        """O cérebro da resposta em andamento, ou o melhor disponível agora."""
+        if getattr(self, "_fixado", None) is not None:
+            return self._fixado
+        return self.cerebros.escolher() if self.cerebros is not None else None
+
+    @property
+    def modelos(self):
+        """Modelos do cérebro em uso (cada máquina pode ter os seus)."""
+        c = self.cerebro
+        return c.modelos if c is not None else self.cfg.ollama.modelos
+
+    _modelos = modelos   # nome antigo, usado no resto deste arquivo
 
     def _opcoes(self) -> dict:
         g = self.cfg.geracao
@@ -118,9 +126,22 @@ class Engenheiro:
         """`conversa=True`: modo conversa (libera o modelo rápido para orientação).
         `historico_txt`: turnos anteriores, para o modelo entender o contexto.
         `extra_rastro`: dados da sessão (pergunta original, reescrita) para o rastro."""
+        # Fixa o cérebro para a resposta inteira: nunca misturar máquinas/modelos
+        # entre a tradução, as ferramentas, a geração e a verificação.
+        self._fixado = None
+        self._fixado = self.cerebro
+        try:
+            return self._responder(pergunta, conversa, historico_txt, extra_rastro, temas_ja_avisados, observacoes_ja_dadas)
+        finally:
+            self._fixado = None
+
+    def _responder(self, pergunta, conversa, historico_txt, extra_rastro, temas_ja_avisados, observacoes_ja_dadas):
         rid = rastro.novo_id()
         self.bus.eventos.clear()
         r: dict = {"pergunta": pergunta, "nome": self.persona.nome, **(extra_rastro or {})}
+        c = self._fixado
+        r["cerebro"] = {"nome": c.nome, "url": getattr(c.cliente, "url", None), "forte": c.modelos.forte,
+                        "rapido": c.modelos.rapido} if c is not None else None
         self._ja_avisados = temas_ja_avisados or set()
         self._obs_dadas = observacoes_ja_dadas or set()
         if historico_txt:

@@ -17,13 +17,29 @@ caminhos:                 # relativos à pasta deste arquivo
   rastros: data/rastros
 
 ollama:
+  # Um cérebro só: o Ollama neste endereço, com os modelos abaixo.
   url: http://localhost:11434
   timeout_s: 900          # CPU é lenta; melhor esperar do que abortar
   modelos:
     embeddings: bge-m3
-    rapido: qwen3:4b      # usados a partir da fase 2
+    rapido: qwen3:4b
     forte: qwen3:14b
     visao: qwen2.5vl:7b
+  # Vários cérebros, em ORDEM DE PREFERÊNCIA: a cada pergunta o Hefesto usa o
+  # primeiro que estiver ligado. "modelos" só lista o que muda em relação ao
+  # bloco acima. Exemplo (descomente e troque os endereços):
+  cerebros: []
+  #  - nome: trabalho
+  #    url: http://<IP-NOTEBOOK-TRABALHO>:11434
+  #    modelos: {forte: "qwen3:14b"}
+  #  - nome: ryzen
+  #    url: http://<IP-RYZEN>:11434
+  #    modelos: {forte: "qwen3:8b"}
+  # Onde roda o bge-m3. Recomendado: o homelab (sempre ligado), para a busca
+  # funcionar mesmo com os cérebros desligados. Vazio = primeiro cérebro/url.
+  url_embeddings: ""
+  # Tempo que o Ollama mantém o modelo carregado depois do uso.
+  manter_carregado: "30m"
 
 colecoes:
   - veiculo

@@ -158,14 +158,31 @@ def _fmt(x: float | None) -> str:
 def status(config: Optional[Path] = OpcConfig, indice: Optional[Path] = OpcIndice):
     """Mostra se o Ollama responde, quais modelos existem e o estado do índice."""
     cfg = carregar_config(config)
-    cli = fabrica.cliente_ollama(cfg)
-    ok = cli.disponivel()
-    con.print(f"Ollama em {cfg.ollama.url}: {'[green]disponível[/]' if ok else '[red]inacessível[/]'}")
-    if ok:
-        instalados = cli.modelos_instalados()
-        for papel, nome in cfg.ollama.modelos.model_dump().items():
-            tem = any(m == nome or m.startswith(nome + ":") or m == nome + ":latest" for m in instalados)
-            con.print(f"  {papel:11} {nome:20} {'[green]instalado[/]' if tem else '[red]faltando[/] (ollama pull ' + nome + ')'}")
+
+    def _tem(instalados: list[str], nome: str) -> bool:
+        return any(m == nome or m == nome + ":latest" for m in instalados)
+
+    cer = fabrica.cerebros(cfg)
+    escolhido = cer.escolher()
+    con.print("[bold]Cérebros[/] (em ordem de preferência):")
+    for c in cer.lista:
+        ok = c.disponivel(0, lambda: 0.0)
+        marca = "[green]respondendo[/]" if ok else "[red]inacessível[/]"
+        uso = "  ← em uso agora" if escolhido is c else ""
+        con.print(f"  {escape(c.nome):12} {escape(str(c.cliente.url))}  {marca}{uso}")
+        if ok:
+            inst = c.cliente.modelos_instalados()
+            for papel in ("forte", "rapido"):
+                nome = getattr(c.modelos, papel)
+                con.print(f"      {papel:7} {nome:20} " + ("[green]instalado[/]" if _tem(inst, nome) else f"[red]faltando[/] (ollama pull {nome})"))
+    url_emb = fabrica.url_embeddings(cfg)
+    cli_emb = fabrica.cliente_ollama(cfg, url_emb)
+    ok_emb = cli_emb.disponivel()
+    con.print(f"[bold]Embeddings[/] em {escape(url_emb)}: " + ("[green]respondendo[/]" if ok_emb else "[red]inacessível[/] (busca só por palavra-chave)"))
+    if ok_emb:
+        nome = cfg.ollama.modelos.embeddings
+        con.print(f"      {nome:28} " + ("[green]instalado[/]" if _tem(cli_emb.modelos_instalados(), nome) else f"[red]faltando[/] (ollama pull {nome})"))
+    con.print(f"[dim]Seus dados: {escape(str(cfg.pasta_usuario))}[/]")
     caminho = indice or cfg.caminho(cfg.caminhos.indice)
     if not Path(caminho).exists():
         con.print(f"Índice: [yellow]ainda não existe[/] ({caminho})")
@@ -189,6 +206,7 @@ def avaliar(
     sem_rerank: bool = typer.Option(False, "--sem-rerank"),
     saida: Optional[Path] = typer.Option(None, "--saida", help="Pasta dos relatórios (padrão: data/usuario/avaliacao/relatorios)"),
     falhar_se_piorar: bool = typer.Option(False, "--falhar-se-piorar", help="Sai com erro se algo piorou em relação à execução anterior"),
+    cerebro: Optional[str] = typer.Option(None, "--cerebro", help="Usa só este cérebro (para comparar máquinas/modelos)"),
     embedder_falso: bool = OpcFalso,
 ):
     """Roda a avaliação e grava um relatório comparável com a execução anterior.
@@ -222,9 +240,16 @@ def avaliar(
         res = avaliacao.avaliar_recuperacao(rec, lista, cfg.busca.final)
     else:
         eng = fabrica.engenheiro(cfg, fabrica.banco(cfg, indice), Barramento(), embedder_falso, sr)
+        if cerebro:
+            try:
+                eng.cerebros.forcar(cerebro)
+            except ValueError as e:
+                con.print(f"[red]{escape(str(e))}[/]")
+                raise typer.Exit(2) from None
         if eng.llm is None:
-            con.print(f"[red]Ollama inacessível em {cfg.ollama.url}: o modo '{modo}' precisa do LLM.[/]")
+            con.print(f"[red]Nenhum cérebro respondendo{' (' + cerebro + ')' if cerebro else ''}: o modo '{modo}' precisa do LLM.[/]")
             raise typer.Exit(2)
+        con.print(f"Cérebro: {escape(eng.cerebro.nome)} (forte: {escape(eng.modelos.forte)})")
         rec = eng.rec
         rastros = cfg.caminho(cfg.caminhos.rastros)
         if modo == "cenarios":
@@ -252,7 +277,10 @@ def avaliar(
             res = avaliacao.avaliar_respostas(eng, lista, rastros, conversa=(modo == "conversa"))
     extra = {"indice": str(indice or cfg.caminho(cfg.caminhos.indice)), "embedder": rec.embedder.nome if rec.embedder else None,
              "reranker": rec.reranker.nome if rec.reranker else None}
-    j, m = avaliacao.gravar_relatorio(saida, arquivo, modo, res, avaliacao.resumo_config(cfg, extra))
+    if modo != "recuperacao" and cerebro:
+        extra["cerebro_forcado"] = cerebro
+    j, m = avaliacao.gravar_relatorio(saida, arquivo, modo if not cerebro else f"{modo}-{cerebro}", res,
+                                      avaliacao.resumo_config(cfg, extra))
     for k_, v in res["metricas"].items():
         con.print(f"  {k_:42} {v}")
     con.print(f"\nRelatório: {m}\nJSON: {j}")
@@ -510,6 +538,8 @@ def conversar(
     indice: Optional[Path] = OpcIndice,
     sem_rerank: bool = typer.Option(False, "--sem-rerank"),
     mostrar_passos: bool = typer.Option(True, "--passos/--sem-passos"),
+    servidor: Optional[str] = typer.Option(None, "--servidor", help="Usa o Hefesto de outra máquina (ex.: http://homelab:8765)"),
+    interlocutor: str = typer.Option("texto", "--interlocutor", help="Nome da sua conversa no servidor"),
     embedder_falso: bool = OpcFalso,
 ):
     """Conversa contínua com o Hefesto (memória, modo guiado, aprende com confirmação).
@@ -520,10 +550,21 @@ def conversar(
     bus = Barramento()
     if mostrar_passos:
         bus.assinar(_mostrar_passo)
-    conv = fabrica.conversador(cfg, fabrica.banco(cfg, indice), bus, nova, embedder_falso, False if sem_rerank else None)
+    if servidor:
+        from engenheiro.interfaces.remoto import ConversadorRemoto, ServidorIndisponivel
+
+        try:
+            conv = ConversadorRemoto(servidor, interlocutor)
+        except ServidorIndisponivel as e:
+            con.print(f"[red]{escape(str(e))}[/]")
+            raise typer.Exit(2) from None
+        if nova:
+            conv.nova_conversa()
+    else:
+        conv = fabrica.conversador(cfg, fabrica.banco(cfg, indice), bus, nova, embedder_falso, False if sem_rerank else None)
     nome = conv.eng.persona.nome
     if conv.eng.llm is None:
-        con.print(f"[yellow]Ollama inacessível em {cfg.ollama.url}: {nome} só consegue apontar trechos, sem conversar.[/]")
+        con.print(f"[yellow]Nenhum cérebro (Ollama) respondendo agora: {nome} só consegue apontar trechos. Ele volta sozinho quando um ligar.[/]")
     retomada = bool(conv.sessao.turnos)
     con.print(f"[bold]{escape(nome)}[/] [dim]({'continuando' if retomada else 'nova'} conversa {conv.sessao.id}; /ajuda para comandos)[/]")
     ultimo_rastro = None
@@ -540,12 +581,9 @@ def conversar(
             if cmd_ in ("/sair", "/q"):
                 break
             if cmd_ == "/nova":
-                from engenheiro.conversa import Sessao
-
-                conv.sessao = Sessao.nova()
-                con.print(f"[dim]Nova conversa {conv.sessao.id}.[/]")
+                con.print(f"[dim]Nova conversa {conv.nova_conversa()}.[/]")
             elif cmd_ == "/perfil":
-                con.print(Text(conv.perfil.para_prompt()))
+                con.print(Text(conv.perfil() if servidor else conv.perfil.para_prompt()))
             elif cmd_ == "/rastro":
                 con.print(f"[dim]engenheiro rastro {ultimo_rastro}[/]" if ultimo_rastro else "[dim]Sem rastro ainda.[/]")
             else:
@@ -570,16 +608,32 @@ def voz(
     dirigindo: bool = typer.Option(False, "--dirigindo", help="Começa no modo dirigindo"),
     sem_mumbling: bool = typer.Option(False, "--sem-mumbling"),
     nova: bool = typer.Option(False, "--nova", help="Conversa nova"),
+    servidor: Optional[str] = typer.Option(None, "--servidor", help="Usa o Hefesto de outra máquina (ex.: http://homelab:8765)"),
+    interlocutor: str = typer.Option("voz", "--interlocutor", help="Nome da sua conversa no servidor"),
     config: Optional[Path] = OpcConfig,
     indice: Optional[Path] = OpcIndice,
 ):
-    """Conversa por voz: diga "Hefesto, ..." (ou aperte Enter com --botao)."""
+    """Conversa por voz: diga "Hefesto, ..." (ou aperte Enter com --botao).
+
+    Com --servidor, esta máquina só ouve e fala; o resto roda no servidor."""
     _exigir_voz()
     cfg = carregar_config(config)
     if sem_mumbling:
         cfg.voz.mumbling = False
     bus = Barramento()
-    conv = fabrica.conversador(cfg, fabrica.banco(cfg, indice), bus, nova)
+    assinatura = None
+    if servidor:
+        from engenheiro.interfaces.remoto import ConversadorRemoto, ServidorIndisponivel
+
+        try:
+            conv = ConversadorRemoto(servidor, interlocutor)
+        except ServidorIndisponivel as e:
+            con.print(f"[red]{escape(str(e))}[/]")
+            raise typer.Exit(2) from None
+        if nova:
+            conv.nova_conversa()
+    else:
+        conv = fabrica.conversador(cfg, fabrica.banco(cfg, indice), bus, nova)
 
     def mostrar(quem: str, texto: str) -> None:
         estilos = {"voce": ("Você", "green"), "hefesto": (conv.eng.persona.nome, "cyan"), "alerta": ("ALERTA", "red")}
@@ -588,6 +642,14 @@ def voz(
 
     con.print("[dim]Carregando voz e transcrição (a primeira vez baixa os modelos)...[/]")
     loop = fabrica.loop_voz(cfg, conv, "botao" if botao else None, dirigindo, mostrar)
+    if servidor and cfg.voz.mumbling and cfg.mqtt.host and cfg.mqtt.topico_pensamento:
+        # Modo remoto: o mumbling vem do servidor pelo MQTT.
+        from engenheiro.interfaces.remoto import assinar_pensamentos
+
+        topico = cfg.mqtt.topico_pensamento.format(id=cfg.assistente.id)
+        assinatura = assinar_pensamentos(cfg.mqtt.host, cfg.mqtt.porta, topico, loop.receber_murmurio, cfg.mqtt.usuario)
+    elif servidor and cfg.voz.mumbling:
+        con.print("[dim]Sem mqtt.host no config: no modo remoto, ele não pensa em voz alta.[/]")
     if conv.eng.llm is None:
         con.print(f"[yellow]Ollama inacessível em {cfg.ollama.url}: ele vai ouvir, mas só consegue apontar trechos.[/]")
     dica = "aperte Enter e fale" if botao else f'diga "{cfg.voz.ativacao.palavra}, ..."'
@@ -597,6 +659,10 @@ def voz(
         loop.rodar()
     except KeyboardInterrupt:
         con.print()
+    finally:
+        if assinatura is not None:
+            assinatura.loop_stop()
+            assinatura.disconnect()
 
 
 voz_app = typer.Typer(help="Testes de áudio para montar a garagem")
@@ -741,6 +807,27 @@ def backup(
     con.print(f"[dim]Restaurar: tar -xzf {escape(str(arquivo))} -C {escape(str(cfg.raiz))}[/]")
     for a in avisos:
         con.print(f"[yellow]{escape(a)}[/]")
+
+
+@app.command("comparar-relatorios")
+def comparar_relatorios(
+    a: Path = typer.Argument(..., help="Relatório JSON A (ex.: avaliação com o 8B)"),
+    b: Path = typer.Argument(..., help="Relatório JSON B (ex.: avaliação com o 14B)"),
+):
+    """Compara duas avaliações lado a lado (ex.: decidir entre 8B e 14B)."""
+    from engenheiro.avaliacao import comparar_relatorios as cmp
+
+    ra, rb = (json.loads(p.read_text(encoding="utf-8")) for p in (a, b))
+    r = cmp(ra, rb)
+    t = Table(title=f"A = {a.name}   ×   B = {b.name}")
+    for col in ("métrica", "A", "B", "B − A"):
+        t.add_column(col)
+    for m in r["metricas"]:
+        t.add_row(m["metrica"], str(m["a"]), str(m["b"]), "" if m["delta"] is None else f"{m['delta']:+}")
+    con.print(t)
+    con.print(f"Perguntas em comum: {r['perguntas_em_comum']}")
+    con.print(Text(f"Só A acertou: {', '.join(r['so_a_acertou']) or 'nenhuma'}"))
+    con.print(Text(f"Só B acertou: {', '.join(r['so_b_acertou']) or 'nenhuma'}"))
 
 
 @app.command("corpus-teste")

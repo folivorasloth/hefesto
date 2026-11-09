@@ -49,13 +49,14 @@ class Servico:
                 pass
 
     def status(self) -> dict:
-        llm = self.eng.llm
-        ollama = bool(llm is not None and getattr(llm, "disponivel", lambda: True)())
+        c = self.eng.cerebro
+        ollama = c is not None
         return {
             "nome": self.eng.persona.nome,
             "id": self.eng.cfg.assistente.id,
             "estado": self.estado if ollama else "sem_cerebro",
             "ollama": ollama,
+            "cerebro": {"nome": c.nome, "forte": c.modelos.forte, "rapido": c.modelos.rapido} if c else None,
             "conversas_ativas": len(self._conversas),
             "telemetria": self.telemetria.sinais() if self.telemetria else [],
             "quando": time.strftime("%Y-%m-%dT%H:%M:%S"),

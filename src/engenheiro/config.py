@@ -40,10 +40,27 @@ class ModelosOllama(BaseModel):
     visao: str = "qwen2.5vl:7b"
 
 
+class CerebroCfg(BaseModel):
+    nome: str
+    url: str
+    # Só o que muda em relação a ollama.modelos (ex.: {"forte": "qwen3:8b"}).
+    modelos: dict[str, str] = {}
+
+
 class Ollama(BaseModel):
     url: str = "http://localhost:11434"
     timeout_s: float = 900
     modelos: ModelosOllama = Field(default_factory=ModelosOllama)
+    # Várias máquinas, em ordem de preferência (ver llm/cerebros.py). Vazio =
+    # um cérebro só, em `url`, com `modelos`.
+    cerebros: list[CerebroCfg] = []
+    # Onde rodar o bge-m3 (busca semântica e indexação). Recomendado: o
+    # homelab, que fica ligado; assim a busca funciona com os cérebros
+    # desligados. Vazio = o primeiro cérebro (ou `url`).
+    url_embeddings: str = ""
+    # Quanto tempo o Ollama mantém o modelo na memória depois de usado.
+    # Recarregar um 14B do disco leva dezenas de segundos em CPU.
+    manter_carregado: str = "30m"
 
 
 class Ocr(BaseModel):
@@ -292,4 +309,11 @@ def carregar_config(caminho: str | Path | None = None) -> Config:
         cfg.ollama.url = _normalizar_url_ollama(os.environ["OLLAMA_HOST"])
     else:
         cfg.ollama.url = _normalizar_url_ollama(cfg.ollama.url)
+    for c in cfg.ollama.cerebros:
+        c.url = _normalizar_url_ollama(c.url)
+        desconhecidos = set(c.modelos) - set(ModelosOllama.model_fields)
+        if desconhecidos:
+            raise ValueError(f"cérebro '{c.nome}': papéis de modelo desconhecidos {sorted(desconhecidos)}")
+    if cfg.ollama.url_embeddings:
+        cfg.ollama.url_embeddings = _normalizar_url_ollama(cfg.ollama.url_embeddings)
     return cfg
