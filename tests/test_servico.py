@@ -11,6 +11,11 @@ from pathlib import Path
 
 import pytest
 
+# Precisa do extra "servico" (pip install -e ".[servico]"); sem ele, pula com aviso.
+pytest.importorskip("fastapi", reason="extra 'servico' não instalado")
+pytest.importorskip("uvicorn", reason="extra 'servico' não instalado")
+pytest.importorskip("paho.mqtt", reason="extra 'servico' não instalado")
+
 sys.path.insert(0, str(Path(__file__).parent))
 from test_conversa import GERAL_1, GERAL_2, LLMConversa, conversa  # noqa: E402,F401  (fixture reaproveitada)
 

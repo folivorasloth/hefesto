@@ -5,6 +5,9 @@ cada parte no caminho. Siga na ordem: cada etapa confirma que a anterior
 funcionou. O que fazer com o Hefesto depois de instalado está no
 [Manual](MANUAL.md).
 
+> Quer testar hoje, nos notebooks (incluindo Windows/WSL)? Use o roteiro curto
+> [Primeiros passos](PRIMEIROS_PASSOS.md). Este guia é o completo, com o homelab.
+
 **Onde roda cada coisa:**
 
 | Máquina | O que roda |

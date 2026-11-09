@@ -31,6 +31,7 @@ você descobre, sempre com a sua confirmação.
 
 | Documento | Para quê |
 |---|---|
+| [**Primeiros passos (hoje)**](docs/PRIMEIROS_PASSOS.md) | Roteiro rápido: Ollama nos notebooks, Hefesto no WSL, primeira conversa e os livros |
 | [**Guia de instalação e testes**](docs/GUIA_INSTALACAO.md) | Instalar em cada máquina e testar tudo, passo a passo |
 | [**Manual**](docs/MANUAL.md) | Usar: livros, conversa, voz, ferramentas, perfil, caderno, serviço, avaliação |
 | [**Arquitetura**](docs/ARQUITETURA.md) | Como funciona, decisões e porquês, números medidos, limitações |
