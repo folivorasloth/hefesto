@@ -94,11 +94,16 @@ Por regras, auditáveis no rastro:
 | Número sem origem (valor **e** unidade) | Marcado ⚠; "fonte" vira inferência |
 | Conhecimento geral com número/valor/instrução | **Removida** |
 | Informação crítica só da web | Aviso no topo |
+| Cita livro **e** web na mesma afirmação | A web sai da citação; o valor precisa estar no livro |
+| Ferramenta chamada com número que não está nas fontes, na sua fala nem no perfil confirmado | A conta roda, mas o resultado **não** vale como origem de números; aviso |
+| Ferramenta que deu erro | Não vale como origem de números |
 | Qualquer problema em afirmação **crítica** (tensão, corrente, torque, combustível, bateria, ignição, segurança) | Aparece **no topo** da resposta (e é falado primeiro) |
 
-Origens aceitas para um número: o trecho citado, o resultado de ferramenta, a
-sua pergunta e os valores **confirmados** do perfil (não o texto inteiro do
+Origens aceitas para um número: o trecho citado, o resultado de ferramenta, o
+que **você disse** (na conversa, as suas falas, nunca a pergunta reescrita pelo
+modelo) e os valores **confirmados** do perfil (não o texto inteiro do
 perfil: as observações dele fariam um "2" qualquer parecer ter origem).
+Resultado web só é origem para a afirmação marcada como web.
 
 ## 4. Ingestão e busca
 

@@ -27,3 +27,14 @@ def test_buscar_sem_resultado_diz_que_nao_encontrou(tmp_path):
     Banco(indice).fechar()
     r = CliRunner().invoke(app, ["buscar", "--indice", str(indice), "--sem-rerank", "torque"])
     assert r.exit_code == 2 and "Nada encontrado" in r.output
+
+
+def test_servir_recusa_abrir_a_api_na_rede_sem_token(tmp_path, monkeypatch):
+    """A API grava no caderno e no perfil: fora desta máquina, só com token."""
+    monkeypatch.delenv("HEFESTO_API_TOKEN", raising=False)
+    monkeypatch.delenv("OLLAMA_HOST", raising=False)
+    conf = tmp_path / "config.yaml"
+    conf.write_text("api:\n  host: 0.0.0.0\nollama:\n  url: http://127.0.0.1:9\n", encoding="utf-8")
+    r = CliRunner().invoke(app, ["servir", "--sem-mqtt", "--config", str(conf)], env={"COLUMNS": "200"})
+    assert r.exit_code == 1, r.output
+    assert "sem token" in r.output and "HEFESTO_API_TOKEN" in r.output

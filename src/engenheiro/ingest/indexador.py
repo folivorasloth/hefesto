@@ -142,7 +142,9 @@ class Indexador:
         encontrados: set[str] = set()
 
         for colecao, arq in self._arquivos(colecoes, rel):
-            rel_path = str(arq.relative_to(self.biblioteca))
+            # Sempre com "/": a chave do documento é a mesma no Windows e no
+            # Linux, então o índice pode ser copiado entre máquinas.
+            rel_path = arq.relative_to(self.biblioteca).as_posix()
             encontrados.add(rel_path)
             try:
                 self._indexar_arquivo(colecao, arq, rel_path, forcar, rel)
@@ -152,8 +154,16 @@ class Indexador:
                 self.bus.publicar("ingestao.erro", arquivo=rel_path, erro=repr(e))
 
         # Arquivo apagado da biblioteca sai do índice (só nas coleções varridas).
+        # Sem a pasta da biblioteca (disco desmontado, caminho errado) não dá
+        # para saber o que foi apagado: nada sai do índice.
+        if not self.biblioteca.exists():
+            if self.banco.caminhos_documentos():
+                rel.avisos.append("Nada foi removido do índice: sem a biblioteca não dá para saber o que foi apagado.")
+            self._gerar_embeddings(rel)
+            return rel
         for caminho in self.banco.caminhos_documentos():
-            colecao = caminho.split("/", 1)[0]
+            # Índices antigos feitos no Windows podem ter "\" no caminho.
+            colecao = caminho.replace("\\", "/").split("/", 1)[0]
             if caminho not in encontrados and (not colecoes or colecao in colecoes):
                 self.banco.remover_documento(caminho)
                 rel.removidos.append(caminho)

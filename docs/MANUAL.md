@@ -186,6 +186,9 @@ notebook da garagem só ouve e fala, sem índice nem livros:
 engenheiro voz --servidor http://<IP-DO-HOMELAB>:8765
 ```
 
+O servidor precisa de `api.host: 0.0.0.0` e de um token (seção 8); defina
+`HEFESTO_API_TOKEN` com o mesmo valor no notebook da garagem.
+
 Para o "pensar em voz alta" chegar no modo remoto, ponha `mqtt.host` no
 `config.yaml` da garagem. O mesmo vale para o chat de texto:
 `engenheiro conversar --servidor ...`.
@@ -456,9 +459,14 @@ export HEFESTO_API_TOKEN="um-token-longo-qualquer"
 engenheiro servir
 ```
 
-O último comando liga a API em `http://<máquina>:8765` (documentação interativa
+O último comando liga a API em `http://localhost:8765` (documentação interativa
 em `/docs`) e o MQTT, se `mqtt.host` estiver no config. `--sem-api` e
 `--sem-mqtt` desligam cada parte.
+
+Por padrão a API só atende a própria máquina (`api.host: 127.0.0.1`), e aí o
+token é opcional. Para atender outras máquinas (voz remota, outros
+personagens), ponha `api.host: 0.0.0.0` no `config.yaml`; nesse caso o token é
+obrigatório e o `engenheiro servir` se recusa a subir a API sem ele.
 
 **API (cabeçalho `Authorization: Bearer <token>`, exceto em `/status`):**
 

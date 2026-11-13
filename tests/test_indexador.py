@@ -118,3 +118,37 @@ def test_markdown_do_caderno(tmp_path):
     idx.indexar()
     t = banco.obter_trechos([1])[1]
     assert t.secao == "Medição da bateria" and "procedimento" in t.tipos
+
+
+def test_caminho_do_documento_usa_barra_em_qualquer_sistema(tmp_path):
+    """No Windows o caminho saía com "\\": o índice não era portável e a
+    remoção por coleção (que separa por "/") nunca casava."""
+    _, bib, banco, ext, idx = _montar(tmp_path)
+    (bib / "veiculo" / "sub").mkdir()
+    (bib / "veiculo" / "sub" / "a.pdf").write_bytes(b"x")
+    r = idx.indexar()
+    assert r.processados == ["veiculo/sub/a.pdf"]
+    assert banco.caminhos_documentos() == ["veiculo/sub/a.pdf"]
+
+
+def test_arquivo_apagado_sai_do_indice_com_filtro_de_colecao(tmp_path):
+    _, bib, banco, ext, idx = _montar(tmp_path)
+    arq = bib / "veiculo" / "a.pdf"
+    arq.write_bytes(b"x")
+    idx.indexar()
+    arq.unlink()
+    r = idx.indexar(colecoes=["veiculo"])
+    assert r.removidos == ["veiculo/a.pdf"]
+    assert banco.caminhos_documentos() == []
+
+
+def test_biblioteca_ausente_nao_apaga_o_indice(tmp_path):
+    """Disco desmontado ou caminho errado: nada pode sair do índice."""
+    cfg, bib, banco, ext, idx = _montar(tmp_path)
+    (bib / "veiculo" / "a.pdf").write_bytes(b"x")
+    idx.indexar()
+    ausente = Indexador(cfg, banco, ext, ExtratorTexto(), EmbedderFalso(), biblioteca=tmp_path / "nao_existe")
+    r = ausente.indexar()
+    assert r.removidos == []
+    assert banco.caminhos_documentos() == ["veiculo/a.pdf"]
+    assert any("não existe" in a for a in r.avisos) and any("Nada foi removido" in a for a in r.avisos)

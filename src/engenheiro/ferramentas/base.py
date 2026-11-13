@@ -15,6 +15,7 @@ Cada ferramenta devolve um dicionário com, no mínimo:
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass, field
 from typing import Callable
 
@@ -59,6 +60,19 @@ class Chamada:
     # Mesma interface dos trechos de livro (TrechoContexto), para o gerador,
     # o verificador e a montagem tratarem tudo igual.
     origens: list[str] = field(default_factory=lambda: ["ferramenta"])
+    # Argumentos numéricos que o modelo passou e que não aparecem em nenhuma
+    # origem confiável (trechos, fala do usuário, perfil confirmado, cálculo
+    # anterior). Ex.: ["valor=83"].
+    sem_origem: list[str] = field(default_factory=list)
+
+    @property
+    def texto_para_numeros(self) -> str:
+        """O que esta chamada vale como ORIGEM de números. Nada, se deu erro
+        ou se recebeu número sem origem: senão o modelo "lavaria" um valor
+        inventado passando-o por uma ferramenta e citando o F# como cálculo."""
+        if self.erro is not None or self.sem_origem:
+            return ""
+        return self.texto
 
     def para_prompt(self) -> str:
         return f"[{self.id}] Ferramenta {self.nome}\n{self.texto}"
@@ -101,6 +115,32 @@ def _validar(esquema: dict, args: dict) -> dict:
     return saida
 
 
+# Um argumento pode vir em outra escala que a da origem (150 mA × 0,15 A).
+_ESCALAS = (1.0, 1e3, 1e-3, 1e6, 1e-6, 1e9, 1e-9, 1e12, 1e-12)
+
+
+def argumentos_sem_origem(esquema: dict, args: dict, origens: list[str]) -> list[str]:
+    """Argumentos numéricos cujo valor não aparece em nenhuma origem.
+    Inteiros (contagens, número de pino, limite de busca) ficam de fora."""
+    from engenheiro.verificador.numeros import quantidades, valores_em
+
+    aceitos: set[float] = set()
+    for o in origens:
+        aceitos |= valores_em(o)
+        for _, leituras, _ in quantidades(o):
+            aceitos |= leituras
+    props = esquema.get("properties", {})
+    faltando = []
+    for nome, valor in args.items():
+        if props.get(nome, {}).get("type") != "number" or isinstance(valor, bool) or not isinstance(valor, (int, float)):
+            continue
+        if valor == 0:
+            continue
+        if not any(math.isclose(abs(valor) * e, a, rel_tol=1e-6) for e in _ESCALAS for a in aceitos):
+            faltando.append(f"{nome}={valor:g}")
+    return faltando
+
+
 class Registro:
     def __init__(self, barramento: Barramento | None = None) -> None:
         self.ferramentas: dict[str, Ferramenta] = {}
@@ -116,20 +156,30 @@ class Registro:
     def nova_sessao(self) -> None:
         self.chamadas = []
 
-    def executar(self, nome: str, argumentos: dict | str | None) -> Chamada:
+    def executar(self, nome: str, argumentos: dict | str | None, origens_numeros: list[str] | None = None) -> Chamada:
+        """`origens_numeros`: textos de onde os números dos argumentos podem ter
+        vindo (trechos, falas do usuário, perfil confirmado). Quando informado
+        (chamada feita pelo modelo), a conta roda do mesmo jeito, mas a chamada
+        fica marcada em `sem_origem` e deixa de valer como origem de números.
+        Sem ele (você rodando a ferramenta à mão), nada é conferido."""
         if isinstance(argumentos, str):
             try:
                 argumentos = json.loads(argumentos or "{}")
             except json.JSONDecodeError:
                 argumentos = {"_bruto": argumentos}
-        argumentos = argumentos or {}
+        if not isinstance(argumentos, dict):
+            argumentos = {"_bruto": argumentos} if argumentos else {}
+        anteriores = [c.texto_para_numeros for c in self.chamadas]
         ch = Chamada(f"F{len(self.chamadas) + 1}", nome, dict(argumentos))
         self.chamadas.append(ch)
         f = self.ferramentas.get(nome)
         try:
             if f is None:
                 raise ErroFerramenta(f"ferramenta inexistente: {nome}. Disponíveis: {sorted(self.ferramentas)}")
-            ch.saida = f.funcao(**_validar(f.parametros, argumentos))
+            validados = _validar(f.parametros, argumentos)
+            if origens_numeros is not None:
+                ch.sem_origem = argumentos_sem_origem(f.parametros, validados, [*origens_numeros, *anteriores])
+            ch.saida = f.funcao(**validados)
         except ErroFerramenta as e:
             ch.erro = str(e)
         except Exception as e:  # noqa: BLE001 - defeito numa ferramenta não derruba a resposta

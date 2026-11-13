@@ -5,8 +5,10 @@ import threading
 from pathlib import Path
 from types import SimpleNamespace
 
-import numpy as np
 import pytest
+
+# numpy só vem com o extra "voz": sem ele, pula este arquivo em vez de quebrar a suíte.
+np = pytest.importorskip("numpy")
 
 from engenheiro.config import Voz
 from engenheiro.conversa import RespostaTurno

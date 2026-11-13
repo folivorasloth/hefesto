@@ -61,8 +61,17 @@ class ClienteOllama:
             r = httpx.post(f"{self.url}{caminho}", json=corpo, timeout=self.timeout)
         except httpx.TransportError as e:
             raise OllamaIndisponivel(f"Ollama inacessível em {self.url}: {e}") from e
-        r.raise_for_status()
-        return r.json()
+        # Erro do próprio Ollama (404: modelo não baixado; 500: faltou memória)
+        # é tratado como indisponibilidade, para quem chama degradar com aviso
+        # em vez de cair. O corpo traz o motivo (ex.: "model 'x' not found").
+        if r.status_code >= 400:
+            motivo = r.text.strip()[:300]
+            dica = f" Rode: ollama pull {corpo['model']}" if r.status_code == 404 and corpo.get("model") else ""
+            raise OllamaIndisponivel(f"Ollama em {self.url} respondeu {r.status_code}: {motivo}.{dica}")
+        try:
+            return r.json()
+        except ValueError as e:
+            raise OllamaIndisponivel(f"Ollama em {self.url} devolveu uma resposta que não é JSON: {e}") from e
 
     def disponivel(self) -> bool:
         try:
