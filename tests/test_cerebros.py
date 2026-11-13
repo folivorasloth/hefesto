@@ -149,3 +149,79 @@ def test_erro_http_do_ollama_vira_indisponivel(monkeypatch):
     monkeypatch.setattr(httpx, "post", post_lixo)
     with pytest.raises(OllamaIndisponivel, match="não é JSON"):
         cli.embed("bge-m3", ["oi"])
+
+
+def _ollama_falso(monkeypatch, respostas):
+    """Troca o httpx.post por uma fila de respostas; devolve os corpos enviados."""
+    enviados = []
+
+    def post(url, json, timeout):
+        enviados.append(dict(json))
+        status, corpo = respostas.pop(0)
+        return httpx.Response(status, json=corpo, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx, "post", post)
+    return enviados
+
+
+def test_raciocinio_do_modelo_nao_entra_na_resposta(monkeypatch):
+    """qwen3 e outros modelos que "pensam" podem devolver <think>...</think>
+    dentro do conteúdo: isso quebrava o JSON e seria mostrado e falado."""
+    import json as _json
+
+    bruto = '<think>\nO usuário quer {algo}. Vou responder em JSON.\n</think>\n\n{"encontrou": true, "afirmacoes": []}'
+    _ollama_falso(monkeypatch, [(200, {"message": {"role": "assistant", "content": bruto}})])
+    r = ClienteOllama("http://x:11434").chat("qwen3:14b", [{"role": "user", "content": "oi"}], formato={"type": "object"})
+    assert _json.loads(r["conteudo"]) == {"encontrou": True, "afirmacoes": []}
+    assert "Vou responder em JSON" in r["raciocinio"]
+    assert "<think>" not in r["mensagem"]["content"]      # não volta para o modelo na etapa de ferramentas
+
+    # Sem formato (conversa): o texto sai limpo, sem o raciocínio.
+    _ollama_falso(monkeypatch, [(200, {"message": {"content": "<think>hum</think>Bom dia!"}})])
+    assert ClienteOllama("http://x:11434").chat("m", [])["conteudo"] == "Bom dia!"
+
+    # Raciocínio cortado antes de fechar (limite de tokens): não vira resposta.
+    _ollama_falso(monkeypatch, [(200, {"message": {"content": "<think>pensando sem parar"}})])
+    r = ClienteOllama("http://x:11434").chat("m", [])
+    assert r["conteudo"] == "" and "pensando sem parar" in r["raciocinio"]
+
+    # Campo próprio do Ollama para o raciocínio também vai para o rastro.
+    _ollama_falso(monkeypatch, [(200, {"message": {"content": "{}", "thinking": "raciocínio separado"}})])
+    assert ClienteOllama("http://x:11434").chat("m", [])["raciocinio"] == "raciocínio separado"
+
+
+def test_json_embrulhado_e_recuperado_e_lixo_continua_invalido(monkeypatch):
+    import json as _json
+
+    cli = ClienteOllama("http://x:11434")
+    for bruto in ('```json\n{"a": 1}\n```', 'Aqui está a resposta:\n{"a": 1}\nEspero ter ajudado.', '{"a": 1}'):
+        _ollama_falso(monkeypatch, [(200, {"message": {"content": bruto}})])
+        assert _json.loads(cli.chat("m", [], formato={"type": "object"})["conteudo"]) == {"a": 1}, bruto
+    # Sem objeto recuperável, o texto volta como veio: quem chama trata como resposta inválida.
+    _ollama_falso(monkeypatch, [(200, {"message": {"content": "não sei responder"}})])
+    assert cli.chat("m", [], formato={"type": "object"})["conteudo"] == "não sei responder"
+    # Sem formato pedido, chaves no texto não são mexidas.
+    _ollama_falso(monkeypatch, [(200, {"message": {"content": "use {x} aqui"}})])
+    assert cli.chat("m", [])["conteudo"] == "use {x} aqui"
+
+
+def test_modelo_sem_suporte_a_think_repete_sem_a_opcao(monkeypatch):
+    from engenheiro.llm.ollama import OllamaIndisponivel, RespostaInvalida
+
+    enviados = _ollama_falso(monkeypatch, [
+        (400, {"error": "registry.ollama.ai/library/llama3 does not support thinking"}),
+        (200, {"message": {"content": "ok"}}),
+    ])
+    assert ClienteOllama("http://x:11434").chat("llama3", [], pensar=False)["conteudo"] == "ok"
+    assert "think" in enviados[0] and "think" not in enviados[1]
+
+    # 400 sem ter mandado `think` não é repetido.
+    enviados = _ollama_falso(monkeypatch, [(400, {"error": "bad request"})])
+    with pytest.raises(OllamaIndisponivel):
+        ClienteOllama("http://x:11434").chat("m", [])
+    assert len(enviados) == 1
+
+    # Resposta sem "message" é resposta inválida, não KeyError.
+    _ollama_falso(monkeypatch, [(200, {"done": True})])
+    with pytest.raises(RespostaInvalida):
+        ClienteOllama("http://x:11434").chat("m", [])

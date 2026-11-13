@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import base64
 import io
+import json
 import math
+import re
 from typing import Protocol
 
 import httpx
@@ -16,6 +18,10 @@ import httpx
 
 class OllamaIndisponivel(RuntimeError):
     """O notebook do LLM está desligado ou fora da rede."""
+
+    def __init__(self, mensagem: str, status: int | None = None) -> None:
+        super().__init__(mensagem)
+        self.status = status   # código HTTP, quando o Ollama respondeu com erro
 
 
 class Embedder(Protocol):
@@ -44,6 +50,52 @@ class RespostaInvalida(RuntimeError):
     """O modelo devolveu algo que não é o JSON pedido."""
 
 
+# Modelos que "pensam" (qwen3, deepseek-r1...) podem devolver o raciocínio
+# dentro do próprio conteúdo, entre <think> e </think>, dependendo da versão
+# do Ollama e da opção `think`. Esse bloco não é resposta: não pode ser
+# mostrado, falado, nem atrapalhar a leitura do JSON.
+_RE_PENSAMENTO = re.compile(r"<think>(.*?)</think>\s*", re.DOTALL | re.IGNORECASE)
+_RE_PENSAMENTO_ABERTO = re.compile(r"<think>.*\Z", re.DOTALL | re.IGNORECASE)   # cortado antes de fechar
+_RE_CERCA = re.compile(r"^\s*```(?:json)?\s*\n?(.*?)\n?```\s*$", re.DOTALL | re.IGNORECASE)
+
+
+def separar_pensamento(conteudo: str) -> tuple[str, str]:
+    """(conteúdo sem o raciocínio, raciocínio)."""
+    pensado = "\n".join(p.strip() for p in _RE_PENSAMENTO.findall(conteudo))
+    limpo = _RE_PENSAMENTO.sub("", conteudo)
+    aberto = _RE_PENSAMENTO_ABERTO.search(limpo)
+    if aberto:
+        pensado = (pensado + "\n" + aberto.group(0)[len("<think>"):].strip()).strip()
+        limpo = limpo[: aberto.start()]
+    return limpo.strip(), pensado
+
+
+def extrair_json(conteudo: str) -> str:
+    """Quando se pediu JSON e o modelo o embrulhou (cerca ```json, uma frase
+    antes ou depois), devolve só o objeto. Se já é JSON válido, ou se não há
+    objeto recuperável, devolve o texto como veio: quem chama decide o que
+    fazer com uma resposta inválida."""
+    try:
+        json.loads(conteudo)
+        return conteudo
+    except ValueError:
+        pass
+    candidatos = []
+    cerca = _RE_CERCA.match(conteudo)
+    if cerca:
+        candidatos.append(cerca.group(1).strip())
+    inicio, fim = conteudo.find("{"), conteudo.rfind("}")
+    if 0 <= inicio < fim:
+        candidatos.append(conteudo[inicio : fim + 1])
+    for c in candidatos:
+        try:
+            if isinstance(json.loads(c), dict):
+                return c
+        except ValueError:
+            continue
+    return conteudo
+
+
 def normalizar(v: list[float]) -> list[float]:
     n = math.sqrt(sum(x * x for x in v)) or 1.0
     return [x / n for x in v]
@@ -67,7 +119,7 @@ class ClienteOllama:
         if r.status_code >= 400:
             motivo = r.text.strip()[:300]
             dica = f" Rode: ollama pull {corpo['model']}" if r.status_code == 404 and corpo.get("model") else ""
-            raise OllamaIndisponivel(f"Ollama em {self.url} respondeu {r.status_code}: {motivo}.{dica}")
+            raise OllamaIndisponivel(f"Ollama em {self.url} respondeu {r.status_code}: {motivo}.{dica}", r.status_code)
         try:
             return r.json()
         except ValueError as e:
@@ -121,14 +173,33 @@ class ClienteOllama:
             corpo["tools"] = ferramentas
         if self.manter_carregado:
             corpo["keep_alive"] = self.manter_carregado
-        d = self._post("/api/chat", corpo)
+        try:
+            d = self._post("/api/chat", corpo)
+        except OllamaIndisponivel as e:
+            # Modelo sem suporte a `think` recusa o pedido com 400: repete sem a opção.
+            if e.status != 400 or "think" not in corpo:
+                raise
+            del corpo["think"]
+            d = self._post("/api/chat", corpo)
+        msg = d.get("message")
+        if not isinstance(msg, dict):
+            raise RespostaInvalida(f"resposta do Ollama sem mensagem: {str(d)[:200]}")
         metricas = {k: d.get(k) for k in ("total_duration", "prompt_eval_count", "eval_count", "done_reason")}
         chamadas = [
             {"nome": c["function"]["name"], "argumentos": c["function"].get("arguments") or {}}
-            for c in d["message"].get("tool_calls") or []
+            for c in msg.get("tool_calls") or []
         ]
-        return RespostaLLM(conteudo=d["message"].get("content", ""), modelo=modelo, metricas=metricas,
-                           chamadas=chamadas, mensagem=d["message"])
+        conteudo, pensado = separar_pensamento(msg.get("content") or "")
+        if formato is not None:
+            conteudo = extrair_json(conteudo)
+        # A mensagem volta para o modelo na etapa de ferramentas: vai sem o raciocínio.
+        msg = {**msg, "content": conteudo}
+        # O raciocínio fica no rastro (auditoria), separado da resposta.
+        raciocinio = "\n".join(p for p in (msg.get("thinking") or "", pensado) if p)
+        if raciocinio:
+            metricas["raciocinio"] = raciocinio   # as métricas da geração são gravadas no rastro
+        return RespostaLLM(conteudo=conteudo, modelo=modelo, metricas=metricas, chamadas=chamadas, mensagem=msg,
+                           raciocinio=raciocinio)
 
     def descrever_imagem(self, modelo: str, imagem, prompt: str) -> str:
         buf = io.BytesIO()
