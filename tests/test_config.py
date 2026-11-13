@@ -47,3 +47,13 @@ def test_exemplo_documenta_todas_as_opcoes():
     sobrando = sorted(no_exemplo - no_codigo)
     assert not faltando, f"opções sem documentação no config.example.yaml: {faltando}"
     assert not sobrando, f"opções no exemplo que o código não conhece: {sobrando}"
+
+
+def test_api_so_local_por_padrao():
+    from engenheiro.config import Api
+
+    assert Api().so_local()
+    for h in ("localhost", "127.0.0.1", "127.0.1.1", "::1", "[::1]"):
+        assert Api(host=h).so_local(), h
+    for h in ("0.0.0.0", "::", "192.168.0.10", "homelab"):
+        assert not Api(host=h).so_local(), h

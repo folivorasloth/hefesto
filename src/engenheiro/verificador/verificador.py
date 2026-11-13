@@ -54,9 +54,23 @@ _RE_CRITICO = re.compile(
 # O que "conhecimento geral" (sem fonte) NUNCA pode trazer: valor, especificação
 # ou instrução de mexer em algo. Só orientação de observação.
 _RE_GERAL_PROIBIDO = re.compile(
-    r"tensao|corrente|volt|amper|ohm|resistencia|potencia|torque|aperto|pressao|temperatura|"
-    r"kgf|psi|\bbar\b|n\s*[·.]?\s*m\b|especifica|desconect|desmont|remov|solt[ae]|aperte|afrouxe|"
-    r"\bligue\b|jumper|curto|faca uma ponte|aplique|injete|borrife"
+    # Grandezas e especificações. "volt" com fronteira: "meia volta" não é tensão.
+    r"tensao|corrente|\bvolts?\b|voltagem|amper|ohm|resistencia|potencia|torque|aperto|pressao|temperatura|"
+    r"kgf|psi|\bbar\b|n\s*[·.]?\s*m\b|especifica|"
+    # Instrução de mexer no carro (imperativo ou infinitivo). Substantivos
+    # parecidos ficam de fora: "parafuso de ajuste" e "corte de combustível"
+    # orientam onde olhar; "ajuste o parafuso" e "corte o fio" mandam mexer.
+    r"desconect|desmont|remov|solt[ae]|aperte|afrouxe|jumper|curto|faca uma ponte|aplique|injete|borrife|"
+    r"\b(?:ligue|ligar|desligue|desligar|conecte|conectar|retire|retirar|tire|tirar|puxe|puxar|emende|emendar|"
+    r"troque|trocar|substitua|substituir|regule|gire|girar|instale|instalar|encoste|encostar|raspe|raspar|"
+    r"lixe|lixar|fure|furar|solde|soldar|force|forcar|cortar|ajustar|acelere|acelerar|de partida|dar partida)\b|"
+    r"\b(?:corte|ajuste|regular)\s+(?:o|a|os|as|um|uma)\b|"
+    # Número por extenso também é valor ("regule a folga com meio milímetro",
+    # "na escala de doze"): os dígitos já são barrados pela checagem de números.
+    r"\b(?:dois|duas|tres|quatro|cinco|seis|sete|oito|nove|dez|onze|doze|treze|quatorze|catorze|quinze|"
+    r"dezesseis|dezessete|dezoito|dezenove|vinte|trinta|quarenta|cinquenta|sessenta|setenta|oitenta|noventa|"
+    r"cem|cento|duzentos|trezentos|quatrocentos|quinhentos|mil)\b|"
+    r"\bmei[oa]\s+(?:milimetro|centimetro|volt|grau|litro|bar|quilo)s?\b"
 )
 
 
@@ -88,11 +102,18 @@ def _validar_citacoes(r: RespostaGerada) -> None:
             a.notas.append("conhecimento geral com citação: tratado como inferência")
         elif a.tipo == "geral":
             a.trechos = []
-        so_web = bool(a.trechos) and all(t.startswith("W") for t in a.trechos)
-        if a.tipo == "fonte" and so_web:
-            # Web nunca é "fonte": vai para a seção não verificada.
+        da_web = [t for t in a.trechos if t.startswith("W")]
+        so_web = bool(a.trechos) and len(da_web) == len(a.trechos)
+        if a.tipo in ("fonte", "inferencia") and so_web:
+            # Web nunca é "fonte" nem base de inferência: vai para a seção não verificada.
             a.tipo = "web"
             a.notas.append("veio só da web: reclassificada como não verificada")
+        elif a.tipo in ("fonte", "inferencia") and da_web:
+            # Livro + web na mesma citação: a web sai. Senão um valor que só
+            # existe no resultado web apareceria com a página do livro ao lado,
+            # e o verificador o "confirmaria" lendo o próprio resultado web.
+            a.trechos = [t for t in a.trechos if not t.startswith("W")]
+            a.notas.append(f"resultado web tirado da citação ({', '.join(da_web)}): web não sustenta fonte")
         elif a.tipo == "web" and not any(t.startswith("W") for t in a.trechos):
             a.tipo = "inferencia"
             a.status = "rebaixada"
@@ -205,12 +226,20 @@ def verificar(
     # Origens aceitas para números: o que a afirmação cita (trecho, ferramenta
     # ou web), a pergunta e o perfil do veículo. Ferramentas (F#) fazem parte
     # do contexto, então conta feita por ferramenta passa; conta "de cabeça" não.
-    por_id = {t.id: t.texto for t in r.contexto}
-    todos_trechos = list(por_id.values())
+    # Ferramenta que deu erro ou recebeu número sem origem não vale como origem
+    # (texto_para_numeros vazio): senão bastaria passar um valor inventado por
+    # uma ferramenta para ele sair como "[cálculo: ...]".
+    por_id = {t.id: getattr(t, "texto_para_numeros", t.texto) for t in r.contexto}
+    sem_origem = {t.id: t.sem_origem for t in r.contexto if getattr(t, "sem_origem", None)}
+    # Web só é origem para a afirmação marcada como web, que já sai como não verificada.
+    todos_trechos = [txt for i, txt in por_id.items() if not i.startswith("W")]
     extras = list(textos_extras or [])
     for a in r.afirmacoes:
         if a.status == "removida":
             continue
+        for t in a.trechos:
+            if t in sem_origem:
+                a.notas.append(f"{t} recebeu número sem origem ({', '.join(sem_origem[t])}): não conta como fonte")
         if a.tipo == "geral":
             origens = []          # sem fonte: só a pergunta e o perfil confirmado
         elif a.tipo_original in ("fonte", "web") and a.trechos:

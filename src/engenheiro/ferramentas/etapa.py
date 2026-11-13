@@ -25,7 +25,11 @@ class ResultadoEtapa:
 
 
 def executar(llm: LLM, modelo: str, registro: Registro, mensagens_base: list[dict], max_rodadas: int,
-             opcoes: dict | None = None, pensar: bool | None = None) -> ResultadoEtapa:
+             opcoes: dict | None = None, pensar: bool | None = None,
+             origens_numeros: list[str] | None = None) -> ResultadoEtapa:
+    """`origens_numeros`: de onde os números dos argumentos podem ter vindo
+    (trechos do contexto, falas do usuário, perfil confirmado). Chamada com
+    número fora disso roda, mas não vale como origem de números."""
     res = ResultadoEtapa()
     registro.nova_sessao()
     msgs = [mensagens_base[0], {"role": "user", "content": mensagens_base[1]["content"] + "\n\n" + prompts.INSTRUCAO_FERRAMENTAS}]
@@ -41,8 +45,13 @@ def executar(llm: LLM, modelo: str, registro: Registro, mensagens_base: list[dic
         if not pedidas:
             break
         for p in pedidas:
-            ch = registro.executar(p["nome"], p.get("argumentos"))
+            ch = registro.executar(p["nome"], p.get("argumentos"), origens_numeros=origens_numeros)
             corpo = ch.saida if ch.erro is None else {"erro": ch.erro}
+            if ch.sem_origem:
+                res.avisos.append(
+                    f"A ferramenta {ch.nome} ({ch.id}) recebeu número que não está nas fontes, na sua fala nem no "
+                    f"perfil confirmado ({', '.join(ch.sem_origem)}): o resultado não conta como fonte."
+                )
             msgs.append({"role": "tool", "tool_name": ch.nome,
                          "content": json.dumps({"id": ch.id, **corpo}, ensure_ascii=False, default=str)})
     else:

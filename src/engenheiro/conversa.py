@@ -58,7 +58,15 @@ ESQUEMA_FATOS = {
 }
 
 _RE_ATIVACAO = re.compile(r"^\s*(?:(?:ei|ola|oi|o|ô)[\s,]+)?{nome}[\s,!:.\-]*", re.IGNORECASE)
-_RE_SIM = re.compile(r"^\s*(sim|s|pode|pode sim|confirma|confirmo|isso|ok|beleza|blz|anota|grava|manda|claro|correto|certo)\b[\s,.!]*", re.I)
+# "Sim" grava fato no perfil como CONFIRMADO, então só vale quando é
+# inequívoco: uma ou mais palavras de confirmação e, logo depois, o fim da
+# fala ou uma pontuação. "isso não está certo", "claro que não" e "pode ser o
+# distribuidor?" começam com as mesmas palavras e NÃO são confirmação.
+_PALAVRA_SIM = (r"(?:sim|s|pode|confirma|confirmo|confirmado|isso|isso mesmo|ok|beleza|blz|anota|anotar|grava|gravar"
+                r"|manda|claro|correto|certo|exato|perfeito)")
+_RE_SIM = re.compile(rf"^\s*{_PALAVRA_SIM}(?:[\s,]+{_PALAVRA_SIM})*\s*(?:$|[,.!;:]+\s*)", re.I)
+# Depois do "sim", um resto que discorda ou ressalva anula a confirmação.
+_RE_RESSALVA = re.compile(r"^(?:mas|porem|so que|na verdade|quer dizer)\b|\b(?:nao|nunca|nem|errado|errada|incorreto|incorreta)\b", re.I)
 _RE_NAO = re.compile(r"^\s*(nao|n|negativo|deixa|deixa pra la|cancela|nem|melhor nao)\b[\s,.!]*", re.I)
 _RE_SLUG = re.compile(r"^[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*$")
 
@@ -125,7 +133,8 @@ class Sessao:
             texto = t.texto
             if t.papel == "hefesto":
                 # Só o miolo da resposta: avisos de segurança e do sistema não ajudam a entender o contexto.
-                texto = re.split(r"\n\n(?:Segurança|Observações do sistema)", texto)[0]
+                # E o que o verificador removeu não volta para o modelo como se fosse contexto.
+                texto = re.split(r"\n\n(?:Segurança|Observações do sistema|Removidas pelo verificador)", texto)[0]
             if len(texto) > max_chars:
                 texto = texto[:max_chars] + " […]"
             linhas.append(f"{'Usuário' if t.papel == 'usuario' else 'Você (assistente)'}: {texto}")
@@ -159,6 +168,8 @@ def interpretar_confirmacao(fala: str) -> tuple[str | None, str]:
     for decisao, rx in (("sim", _RE_SIM), ("nao", _RE_NAO)):
         m = rx.match(n)
         if m:
+            if decisao == "sim" and _RE_RESSALVA.search(n[m.end():].strip()):
+                return None, fala  # "certo, mas...", "sim, só que não é esse": na dúvida, não anota
             return decisao, fala[m.end():].strip()
     return None, fala
 
@@ -298,7 +309,9 @@ class Conversador:
         resp = self.eng.responder(pergunta, conversa=True, historico_txt=hist,
                                   extra_rastro={"sessao": self.sessao.id, "fala_original": fala, "pergunta_reescrita": pergunta},
                                   temas_ja_avisados=set(self.sessao.temas_avisados),
-                                  observacoes_ja_dadas=set(self.sessao.observacoes_dadas))
+                                  observacoes_ja_dadas=set(self.sessao.observacoes_dadas),
+                                  # Origem de números: o que VOCÊ disse nesta conversa, nunca a reescrita do modelo.
+                                  falas_usuario=[t.texto for t in self.sessao.turnos if t.papel == "usuario"])
         self.sessao.temas_avisados = sorted(set(self.sessao.temas_avisados) | set(resp.temas_seguranca))
         self.sessao.observacoes_dadas = list(dict.fromkeys(self.sessao.observacoes_dadas + resp.observacoes))
         propostas = self._extrair_propostas(fala)

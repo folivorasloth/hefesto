@@ -166,11 +166,18 @@ class Voz(BaseModel):
 
 
 class Api(BaseModel):
-    host: str = "0.0.0.0"
+    # Padrão: só esta máquina. Para atender outras (voz remota, outros
+    # personagens), use 0.0.0.0 ou o IP da máquina; aí o token é obrigatório.
+    host: str = "127.0.0.1"
     porta: int = 8765
-    # Token opcional (recomendado na rede de casa também). Prefira a variável
-    # de ambiente HEFESTO_API_TOKEN a escrever o token aqui.
+    # Obrigatório quando o host não é local. Prefira a variável de ambiente
+    # HEFESTO_API_TOKEN a escrever o token aqui.
     token: str = ""
+
+    def so_local(self) -> bool:
+        """True se a API só aceita conexões desta máquina."""
+        h = self.host.strip().lower().strip("[]")
+        return h == "localhost" or h == "::1" or h.startswith("127.")
 
 
 class Mqtt(BaseModel):

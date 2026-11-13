@@ -718,6 +718,16 @@ def servir(
     import os
 
     cfg = carregar_config(config)
+    token = os.environ.get("HEFESTO_API_TOKEN") or cfg.api.token
+    if api and not token and not cfg.api.so_local():
+        # A API grava no caderno e no perfil: aberta na rede, só com token.
+        # Conferido antes de montar o serviço, para falhar na hora.
+        con.print(
+            f"[red]A API está configurada para atender a rede (api.host: {escape(cfg.api.host)}) sem token.[/]\n"
+            "Defina a variável HEFESTO_API_TOKEN (e a mesma nos clientes), "
+            "ou use api.host: 127.0.0.1 para atender só esta máquina."
+        )
+        raise typer.Exit(1)
     svc = fabrica.servico(cfg)
     nome = svc.eng.persona.nome
     if svc.eng.llm is None:
@@ -739,9 +749,8 @@ def servir(
 
             from engenheiro.interfaces.api import criar_app
 
-            token = os.environ.get("HEFESTO_API_TOKEN") or cfg.api.token
             if not token:
-                con.print("[yellow]API sem token: qualquer um na rede pode usar. Defina HEFESTO_API_TOKEN.[/]")
+                con.print("[dim]API sem token, atendendo só esta máquina.[/]")
             con.print(f"API: http://{cfg.api.host}:{cfg.api.porta}  (documentação em /docs)")
             uvicorn.run(criar_app(svc, token), host=cfg.api.host, port=cfg.api.porta, log_level="warning")
         elif cli_mqtt:

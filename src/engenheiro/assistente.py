@@ -122,12 +122,18 @@ class Engenheiro:
     # ------------------------------------------------------------------
     def responder(self, pergunta: str, conversa: bool = False, historico_txt: str = "",
                   extra_rastro: dict | None = None, temas_ja_avisados: set[str] | None = None,
-                  observacoes_ja_dadas: set[str] | None = None) -> RespostaFinal:
+                  observacoes_ja_dadas: set[str] | None = None,
+                  falas_usuario: list[str] | None = None) -> RespostaFinal:
         """`conversa=True`: modo conversa (libera o modelo rápido para orientação).
         `historico_txt`: turnos anteriores, para o modelo entender o contexto.
         `extra_rastro`: dados da sessão (pergunta original, reescrita) para o rastro."""
         # Fixa o cérebro para a resposta inteira: nunca misturar máquinas/modelos
         # entre a tradução, as ferramentas, a geração e a verificação.
+        # O que o usuário DISSE é origem aceita de números. No modo conversa a
+        # `pergunta` é uma reescrita feita pelo modelo (pode trazer um número
+        # que nunca saiu da boca do usuário), então quem chama informa as falas
+        # originais; a reescrita serve só para a busca e para o prompt.
+        self._falas_usuario = list(falas_usuario) if falas_usuario else [pergunta]
         self._fixado = None
         self._fixado = self.cerebro
         try:
@@ -261,13 +267,16 @@ class Engenheiro:
         # etapa de ferramentas e economiza uma chamada inteira ao modelo.
         if self.registro is not None and self.cfg.ferramentas.ativo and ferramentas:
             base = gerador.mensagens_base(persona_txt, self.perfil_txt, pergunta, contexto, historico_txt)
-            et = etapa_ferramentas.executar(self.llm, modelo, self.registro, base,
-                                            self.cfg.ferramentas.max_rodadas, self._opcoes(), g.pensar)
+            et = etapa_ferramentas.executar(
+                self.llm, modelo, self.registro, base, self.cfg.ferramentas.max_rodadas, self._opcoes(), g.pensar,
+                origens_numeros=[t.texto for t in contexto] + self._falas_usuario + [self.perfil_valores],
+            )
             chamadas = et.chamadas
             avisos += et.avisos
             r["ferramentas"] = {
                 "rodadas": et.rodadas,
-                "chamadas": [{"id": c.id, "nome": c.nome, "argumentos": c.argumentos, "saida": c.saida, "erro": c.erro}
+                "chamadas": [{"id": c.id, "nome": c.nome, "argumentos": c.argumentos, "saida": c.saida, "erro": c.erro,
+                              "argumentos_sem_origem": c.sem_origem}
                              for c in chamadas],
                 "mensagens": et.mensagens,
             }
@@ -288,7 +297,7 @@ class Engenheiro:
         self.bus.publicar("geracao.concluida", afirmacoes=len(ger.afirmacoes), encontrou=ger.encontrou)
 
         self.bus.publicar("verificacao.iniciada", afirmacoes=len(ger.afirmacoes))
-        ver = verificar(ger, pergunta, self.llm, modelo, self._opcoes(), g.pensar,
+        ver = verificar(ger, "\n".join(self._falas_usuario), self.llm, modelo, self._opcoes(), g.pensar,
                         textos_extras=[self.perfil_valores], ativo=self.cfg.verificador.ativo)
         self.bus.publicar(
             "verificacao.concluida",

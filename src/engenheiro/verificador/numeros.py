@@ -74,10 +74,43 @@ _UNIDADES: list[tuple[str, str, float]] = [
     (r"ms", "s", 1e-3), (r"s(?=\b)", "s", 1.0),
     (r"[ªº]", "ordinal", 1.0),
 ]
+# Três formas, nesta ordem: número + unidade conhecida; número COLADO a um
+# sufixo desconhecido ("10µH", "100cv", "1e3", "5W30"); número solto. A do
+# meio existe para o número não ficar invisível: o sufixo vira uma unidade
+# "opaca", que só casa com o mesmo sufixo escrito igual na origem.
 _RE_QUANTIDADE = re.compile(
-    r"(?<![\w.,])(\d+(?:[.,]\d+)*)(?![.,]?\d)\s*(" + "|".join(f"(?:{u})" for u, _, _ in _UNIDADES) + r")?(?![\w²])"
+    r"(?<![\w.,])(\d+(?:[.,]\d+)*)(?![.,]?\d)(?:"
+    r"\s*(" + "|".join(f"(?:{u})" for u, _, _ in _UNIDADES) + r")(?![\w²])"
+    r"|([^\W\d_][\w²]*)"
+    r"|(?![\w²]))"
 )
 _RE_UNIDADES_COMPILADAS = [(re.compile(rf"^(?:{u})$"), g, f) for u, g, f in _UNIDADES]
+
+# Notação de bancada para resistor: 4k7 = 4,7 kΩ, 4R7 = 4,7 Ω, 2M2 = 2,2 MΩ; e
+# "10k" / "10K" / "1M" sozinhos. Reescritos para a forma com unidade.
+_RE_RESISTOR_MEIO = re.compile(r"(?<![\w.,])(\d+)([kKRM])(\d+)(?![\w.,]?\d)(?!\w)")
+_RE_RESISTOR_FIM = re.compile(r"(?<![\w.,])(\d+(?:[.,]\d+)?)\s?([kM])(?![\w²Ω])")
+_SUFIXO_RESISTOR = {"k": "kΩ", "K": "kΩ", "R": "Ω", "M": "MΩ"}
+
+# Número que é só rótulo ("Figura 12", "passo 3", "p. 45"): não serve de
+# origem para um valor COM unidade ("12 A").
+_RE_ROTULO = re.compile(
+    r"\b(?:figuras?|fig|tabelas?|tab|passos?|etapas?|itens|item|p[áa]ginas?|p[áa]g|p|cap[íi]tulos?|cap"
+    r"|se[çc][ãa]o|se[çc][õo]es|figures?|tables?|steps?|pages?|chapters?|sections?)\.?\s*(?:n[ºo°]\.?\s*)?"
+    r"\d+(?:[.,]\d+)*",
+    re.IGNORECASE,
+)
+
+
+def _normalizar_resistores(texto: str) -> str:
+    texto = _RE_RESISTOR_MEIO.sub(lambda m: f"{m.group(1)},{m.group(3)} {_SUFIXO_RESISTOR[m.group(2)]}", texto)
+    return _RE_RESISTOR_FIM.sub(lambda m: f"{m.group(1)} {_SUFIXO_RESISTOR[m.group(2)]}", texto)
+
+
+def _sig(v: float) -> float:
+    """Arredonda por algarismos significativos, não por casas decimais:
+    22 pF (2,2e-11) não pode virar zero, senão todo pF é igual a todo pF."""
+    return float(f"{v:.9g}")
 
 
 def _unidade(txt: str | None) -> tuple[str, float] | None:
@@ -91,7 +124,7 @@ def _unidade(txt: str | None) -> tuple[str, float] | None:
 
 def quantidades(texto: str) -> list[tuple[str, set[float], str | None]]:
     """[(token, leituras na unidade base, grandeza ou None)]."""
-    texto = _RE_ID_TRECHO.sub(" ", texto)
+    texto = _normalizar_resistores(_RE_ID_TRECHO.sub(" ", texto))
     saida = []
     for m in _RE_QUANTIDADE.finditer(texto):
         tok = m.group(1).strip(".,")
@@ -99,7 +132,9 @@ def quantidades(texto: str) -> list[tuple[str, set[float], str | None]]:
         leituras = _interpretacoes(tok)
         if u:
             grandeza, fator = u
-            saida.append((tok, {round(v * fator, 9) for v in leituras}, grandeza))
+            saida.append((tok, {_sig(v * fator) for v in leituras}, grandeza))
+        elif m.group(3):
+            saida.append((tok, leituras, "?" + m.group(3)))  # sufixo desconhecido: casa só literalmente
         else:
             saida.append((tok, leituras, None))
     return saida
@@ -125,10 +160,13 @@ def numeros_sem_origem(afirmacao: str, origens: list[str]) -> list[str]:
     for o in origens:
         for _, leituras, grandeza in quantidades(o):
             todos |= leituras
+            if grandeza is not None:
+                com_unidade.setdefault(grandeza, set()).update(leituras)
+        # Número solto (célula de tabela) serve de origem para valor com
+        # unidade; número de rótulo ("Figura 12") não.
+        for _, leituras, grandeza in quantidades(_RE_ROTULO.sub(" ", o)):
             if grandeza is None:
                 sem_unidade |= leituras
-            else:
-                com_unidade.setdefault(grandeza, set()).update(leituras)
         # Leituras "brutas" (sem converter prefixo), para afirmação sem unidade.
         todos |= valores_em(o)
     suspeitos = []

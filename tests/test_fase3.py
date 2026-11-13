@@ -278,3 +278,69 @@ def test_cliente_searxng(monkeypatch):
         web.buscar("http://homelab:8888", "x")
     with pytest.raises(web.WebIndisponivel, match="não configurado"):
         web.buscar("", "x")
+
+
+# ---------------------------------------------------------------- furos fechados
+def test_numero_inventado_nao_e_lavado_por_ferramenta(montar):
+    """O modelo passa um número que não está em lugar nenhum por uma ferramenta
+    e cita o F#: não pode sair como "Das fontes [cálculo: ...]"."""
+    cfg, criar = montar
+    llm = LLMComFerramentas(
+        rodadas=[[{"nome": "converter_unidade", "argumentos": {"valor": 83, "de": "N.m", "para": "N.m"}}]],
+        resposta={"encontrou": True, "falta": "", "sugestoes": [], "afirmacoes": [
+            {"texto": "O torque de aperto é 83 N·m.", "tipo": "fonte", "trechos": ["F1"], "critica": True}]},
+        verificacao={"avaliacoes": [{"id": "A1", "veredito": "suporta", "justificativa": "está no F1"}]},
+    )
+    resp = criar(llm).responder("Qual o torque de aperto do cabeçote?")
+    assert "Das fontes:" not in resp.texto
+    assert any("83" in p for p in resp.problemas_criticos)
+    assert "não conta como fonte" in resp.texto
+    r = rastro.carregar(cfg.caminho(cfg.caminhos.rastros), resp.rastro_id)
+    assert r["ferramentas"]["chamadas"][0]["argumentos_sem_origem"] == ["valor=83"]
+
+
+def test_resultado_de_uma_ferramenta_serve_de_argumento_para_a_proxima(montar):
+    _, criar = montar
+    llm = LLMComFerramentas(
+        rodadas=[[{"nome": "lei_de_ohm", "argumentos": {"tensao_v": 12, "resistencia_ohm": 6}}],
+                 [{"nome": "lei_de_ohm", "argumentos": {"tensao_v": 12, "corrente_a": 2}}]],
+        resposta={"encontrou": True, "falta": "", "sugestoes": [], "afirmacoes": [
+            {"texto": "A potência dissipada é de 24 W.", "tipo": "fonte", "trechos": ["F2"], "critica": True}]},
+        verificacao={"avaliacoes": [{"id": "A1", "veredito": "suporta", "justificativa": "resultado da ferramenta"}]},
+    )
+    resp = criar(llm).responder(PERGUNTA)   # 12 e 6 vêm da pergunta; o 2 vem do F1
+    assert "Das fontes:" in resp.texto and not resp.problemas_criticos
+
+
+def test_ferramenta_com_erro_nao_e_origem_de_numero(montar):
+    _, criar = montar
+    llm = LLMComFerramentas(
+        rodadas=[[{"nome": "calcular_tudo", "argumentos": {"corrente": 9}}]],
+        resposta={"encontrou": True, "falta": "", "sugestoes": [], "afirmacoes": [
+            {"texto": "A corrente é de 9 A.", "tipo": "fonte", "trechos": ["F1"], "critica": True}]},
+        verificacao={"avaliacoes": [{"id": "A1", "veredito": "suporta", "justificativa": "está no F1"}]},
+    )
+    resp = criar(llm).responder(PERGUNTA)
+    assert "Das fontes:" not in resp.texto and any("9" in p for p in resp.problemas_criticos)
+
+
+def test_valor_que_so_esta_na_web_nao_pega_carona_na_citacao_do_livro(montar):
+    _, criar = montar
+
+    def web(q):
+        return [ResultadoWeb("W1", "Fórum", "https://forum.exemplo.com/t/1", "Dizem que a corrente é 9 A.")]
+
+    llm = LLMComFerramentas(
+        rodadas=[[]],
+        resposta={"encontrou": True, "falta": "", "sugestoes": [], "afirmacoes": [
+            {"texto": "A corrente é de 9 A.", "tipo": "fonte", "trechos": ["T1", "W1"], "critica": True},
+            {"texto": "Então o fusível deve ser maior que 9 A.", "tipo": "inferencia", "trechos": ["W1"], "critica": True}]},
+        verificacao={"avaliacoes": [{"id": "A1", "veredito": "suporta", "justificativa": "W1 diz 9 A"}]},
+    )
+    resp = criar(llm, web).responder(PERGUNTA + " Pesquise na internet.")
+    assert "Das fontes:" not in resp.texto
+    assert any("9" in p and "sem origem" in p for p in resp.problemas_criticos)    # a "fonte" T1+W1
+    assert any("SÓ da web" in p for p in resp.problemas_criticos)                   # a inferência só de W1
+    # O verificador não recebe o resultado web como se fosse trecho de livro.
+    assert "forum" not in llm.mensagens_de("verificacao")[1]["content"].lower()
+    assert "Dizem que" not in llm.mensagens_de("verificacao")[1]["content"]

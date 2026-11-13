@@ -68,7 +68,21 @@ mqtt:
   host: "<IP-DO-HOMELAB>"
 ```
 
-E a conversa por voz aponta para o homelab:
+Por padrão a API só atende a própria máquina. Para o homelab atender as
+outras, abra a API no `config.yaml` **do homelab** e defina o token (sem
+token, o `engenheiro servir` se recusa a abrir a API para a rede):
+
+```yaml
+api:
+  host: 0.0.0.0
+```
+
+```bash
+export HEFESTO_API_TOKEN="$(openssl rand -hex 24)"
+```
+
+Nas máquinas clientes, defina `HEFESTO_API_TOKEN` com o mesmo valor. A
+conversa por voz aponta para o homelab:
 
 ```bash
 engenheiro voz --servidor http://<IP-DO-HOMELAB>:8765
@@ -541,7 +555,9 @@ curl http://localhost:8765/status
 curl -X POST http://localhost:8765/conversas/joao/turno -H "Authorization: Bearer $HEFESTO_API_TOKEN" -H "Content-Type: application/json" -d '{"fala": "onde fica a bobina?"}'
 ```
 
-A documentação interativa fica em `http://<máquina>:8765/docs`.
+A documentação interativa fica em `http://localhost:8765/docs`. Para acessar
+de outra máquina, use `api.host: 0.0.0.0` no config; nesse caso o token é
+obrigatório.
 
 Agora o MQTT. Num terminal, acompanhe tudo o que o Hefesto publica:
 

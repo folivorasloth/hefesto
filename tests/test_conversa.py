@@ -9,7 +9,7 @@ from engenheiro import rastro
 from engenheiro.assistente import Engenheiro
 from engenheiro.caderno import Caderno
 from engenheiro.config import Config
-from engenheiro.conversa import (PROMPT_FATOS, PROMPT_REESCRITA, Conversador, Sessao, interpretar_confirmacao,
+from engenheiro.conversa import (PROMPT_FATOS, PROMPT_REESCRITA, Conversador, Sessao, Turno, interpretar_confirmacao,
                                  remover_ativacao, validar_fato)
 from engenheiro.eventos import Barramento
 from engenheiro.ferramentas import criar_registro
@@ -210,3 +210,74 @@ def test_aviso_de_seguranca_completo_uma_vez_e_depois_lembrete(conversa):
     conv.sessao = Sessao.nova()
     conv.eng.llm.respostas.append(GERAL_1)
     assert "alta tensão" in conv.turno("como eu identifico o tipo de ignição?").texto
+
+
+def test_sim_so_vale_quando_e_inequivoco():
+    """Um "sim" grava o fato no perfil como CONFIRMADO: frase que só COMEÇA
+    com palavra de confirmação não pode contar."""
+    for fala in ("isso não está certo", "claro que não", "pode ser o distribuidor?", "isso é normal?",
+                 "certo, mas e o fio verde?", "sim, só que não é esse", "certo?", "ok, na verdade é o 2E"):
+        assert interpretar_confirmacao(fala)[0] is None, fala
+    for fala in ("sim", "Sim.", "pode", "pode sim", "isso mesmo", "ok, pode anotar", "claro!", "sim sim", "isso, anota"):
+        assert interpretar_confirmacao(fala) == ("sim", ""), fala
+    assert interpretar_confirmacao("pode sim, e a bobina fica onde?") == ("sim", "e a bobina fica onde?")
+    assert interpretar_confirmacao("claro que não")[0] is None
+    assert interpretar_confirmacao("não, deixa") == ("nao", "deixa")
+
+
+def test_numero_que_so_existe_na_reescrita_do_modelo_e_suspeito(conversa):
+    """A reescrita é feita pelo modelo a partir do histórico: um número que
+    aparece nela, mas que o usuário nunca disse, não tem origem."""
+    _, _, criar = conversa
+    vazio = {"encontrou": False, "falta": "Sem fonte.", "sugestoes": [], "afirmacoes": []}
+    medir = {"encontrou": True, "falta": "", "sugestoes": [], "afirmacoes": [
+        {"texto": "Confira a folga de 0,7 mm com um calibre de lâminas.", "tipo": "inferencia", "trechos": [], "critica": False}]}
+    llm = LLMConversa(respostas=[vazio, medir], reescritas=["Como medir a folga de 0,7 mm das velas?"])
+    c = criar(llm)
+    c.turno("qual a folga das velas?")
+    r = c.turno("e como meço isso?")
+    assert "⚠ número(s) sem origem verificável: 0,7" in r.texto
+
+
+def test_numero_dito_pelo_usuario_em_turno_anterior_continua_valendo(conversa):
+    _, _, criar = conversa
+    vazio = {"encontrou": False, "falta": "Sem fonte.", "sugestoes": [], "afirmacoes": []}
+    medir = {"encontrou": True, "falta": "", "sugestoes": [], "afirmacoes": [
+        {"texto": "Você mediu 0,7 mm; compare com o valor do manual.", "tipo": "inferencia", "trechos": [], "critica": False}]}
+    llm = LLMConversa(respostas=[vazio, medir], reescritas=["A folga de 0,7 mm das velas está boa?"])
+    c = criar(llm)
+    c.turno("medi 0,7 mm de folga na vela")
+    r = c.turno("isso está bom?")
+    assert "sem origem" not in r.texto
+
+
+def test_o_que_o_verificador_removeu_nao_volta_no_historico():
+    s = Sessao("x")
+    s.turnos.append(Turno("usuario", "onde fica?", "t"))
+    s.turnos.append(Turno("hefesto", "Conhecimento geral:\n• Fica na lateral.\n\nRemovidas pelo verificador (não use):\n• \"São 12 V.\"", "t"))
+    assert "12 V" not in s.historico_txt() and "Fica na lateral" in s.historico_txt()
+
+
+def test_conhecimento_geral_nao_passa_instrucao_de_mexer_nem_numero_por_extenso(conversa):
+    _, _, criar = conversa
+    perigosas = [
+        "Conecte um fio do positivo da bateria direto na bobina.",
+        "Tire o cabo de vela com o motor ligado para testar.",
+        "Corte o fio verde e emende no vermelho.",
+        "Troque as velas e regule a folga com meio milímetro.",
+        "Meça a bobina com o multímetro na escala de doze.",
+        "Ajuste o parafuso da marcha lenta até estabilizar.",
+    ]
+    seguras = [
+        "O parafuso de ajuste da marcha lenta fica na lateral do carburador.",
+        "A mangueira dá meia volta por trás do filtro de ar.",
+        "O sistema de corte de combustível fica perto do carburador.",
+    ]
+    llm = LLMConversa(respostas=[{"encontrou": True, "falta": "", "sugestoes": [], "afirmacoes": [
+        {"texto": t, "tipo": "geral", "trechos": [], "critica": False} for t in perigosas + seguras]}])
+    r = criar(llm).turno("onde fica o parafuso da marcha lenta?")
+    principal, removidas = r.texto.split("Removidas pelo verificador")
+    for t in perigosas:
+        assert t in removidas and t not in principal, t
+    for t in seguras:
+        assert t in principal, t

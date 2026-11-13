@@ -128,3 +128,24 @@ def test_keep_alive_vai_na_requisicao(monkeypatch):
     cli.chat("m", [{"role": "user", "content": "oi"}])
     cli.embed("bge-m3", ["oi"])
     assert all(e["keep_alive"] == "30m" for e in enviados)
+
+
+def test_erro_http_do_ollama_vira_indisponivel(monkeypatch):
+    """404 (modelo não baixado) ou 500 (faltou memória) precisam degradar com
+    aviso, não estourar HTTPStatusError em quem chama."""
+    from engenheiro.llm.ollama import OllamaIndisponivel
+
+    def post(url, json, timeout):
+        return httpx.Response(404, json={"error": "model 'bge-m3' not found"}, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx, "post", post)
+    cli = ClienteOllama("http://x:11434")
+    with pytest.raises(OllamaIndisponivel, match="404.*not found.*ollama pull bge-m3"):
+        cli.embed("bge-m3", ["oi"])
+
+    def post_lixo(url, json, timeout):
+        return httpx.Response(200, text="<html>proxy</html>", request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx, "post", post_lixo)
+    with pytest.raises(OllamaIndisponivel, match="não é JSON"):
+        cli.embed("bge-m3", ["oi"])
